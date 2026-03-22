@@ -1,5 +1,5 @@
 ---
-name: search
+name: search-job
 description: Search job boards for matching positions using Playwright. Filters by qualification fit against the user's resume. Respects job board config in profile.json.
 argument-hint: "<job_title_keywords_location>"
 ---

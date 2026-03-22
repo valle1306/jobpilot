@@ -6,10 +6,10 @@ A Claude Code plugin that automates job applications, generates cover letters an
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| **Apply** | `/jobpilot:apply <url>` | Auto-fill job application forms via Playwright browser automation |
+| **Apply** | `/jobpilot:apply-job <url>` | Auto-fill job application forms via Playwright browser automation |
 | **Cover Letter** | `/jobpilot:cover-letter <job_desc>` | Generate a tailored cover letter |
 | **Upwork Proposal** | `/jobpilot:upwork-proposal <job_desc>` | Generate a concise Upwork proposal |
-| **Search** | `/jobpilot:search <query>` | Search job boards and rank results by qualification fit |
+| **Search** | `/jobpilot:search-job <query>` | Search job boards and rank results by qualification fit |
 | **Interview** | `/jobpilot:interview <job_desc>` | Generate interview prep Q&A (behavioral, technical, system design) |
 | **Humanizer** | `/jobpilot:humanizer <text>` | Remove AI writing patterns for natural tone |
 
@@ -85,11 +85,25 @@ The `jobBoards` section controls which boards the `search` skill uses:
 - Add board-specific credentials for login
 - The `apply` skill also uses these credentials when filling forms on matching domains
 
+### 4. Allow browser permissions (recommended)
+
+To avoid being prompted for permission on every browser action, add the following to `.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_jobpilot_playwright__*"
+    ]
+  }
+}
+```
+
 ## Usage Examples
 
 ```bash
 # Apply to a job (paste URL or job page content)
-/jobpilot:apply https://boards.greenhouse.io/company/jobs/12345
+/jobpilot:apply-job https://boards.greenhouse.io/company/jobs/12345
 
 # Generate a cover letter
 /jobpilot:cover-letter We're looking for a senior full-stack developer...
@@ -98,7 +112,7 @@ The `jobBoards` section controls which boards the `search` skill uses:
 /jobpilot:upwork-proposal Need a React/Node developer to build a dashboard...
 
 # Search for jobs
-/jobpilot:search "senior fullstack developer Portland ME remote"
+/jobpilot:search-job "senior fullstack developer Portland ME remote"
 
 # Prep for an interview
 /jobpilot:interview We're hiring a backend engineer to work on our API platform...
