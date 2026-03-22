@@ -111,6 +111,7 @@
     "skipTitleKeywords": [],
     "minSalary": 0,
     "maxSalary": 0,
+    "salaryExpectation": "$100,001 to $125,000",
     "defaultStartDate": "2 weeks notice"
   }
 }

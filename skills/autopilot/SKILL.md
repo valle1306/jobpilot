@@ -27,6 +27,7 @@ Read the `autopilot` section from `profile.json`. Apply these defaults for any m
 | `confirmMode` | "batch" | `"batch"` = review and approve the list before applying. `"auto"` = skip confirmation and apply immediately when ALL qualified jobs score >= `minMatchScore`. If any job scores below `minMatchScore`, falls back to batch confirmation. |
 | `minSalary` | 0 | Minimum annual salary (USD). Skip jobs that list compensation below this. 0 = no filter. |
 | `maxSalary` | 0 | Maximum annual salary (USD). Skip jobs above this. 0 = no filter. |
+| `salaryExpectation` | "" | Auto-fill salary expectation fields (e.g., "$100,001 to $125,000"). If empty, asks the user on first encounter. |
 | `defaultStartDate` | "2 weeks notice" | Default answer for start date fields |
 
 Inline argument overrides take precedence. Examples:

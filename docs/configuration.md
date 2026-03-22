@@ -126,6 +126,7 @@ Controls the behavior of the `/autopilot` batch application skill.
 | `skipTitleKeywords` | `[]` | Title keywords to filter out |
 | `minSalary` | `0` | Minimum annual salary (USD). Jobs listing below this are skipped. 0 = no filter. |
 | `maxSalary` | `0` | Maximum annual salary (USD). Jobs listing above this are skipped. 0 = no filter. |
+| `salaryExpectation` | `""` | Auto-fill salary fields (e.g., `"$100,001 to $125,000"`). If empty, asks on first encounter. |
 | `defaultStartDate` | `"2 weeks notice"` | Default answer for start date fields |
 
 ## Work Authorization

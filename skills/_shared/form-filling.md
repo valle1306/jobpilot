@@ -19,7 +19,7 @@ Job applications often span multiple pages/steps. For each page:
 - **Address fields** -> use `profile.json > address.*`
 - **Phone number** -> use `profile.json > personal.phone`
 - **LinkedIn/GitHub/Website** -> use `profile.json > personal.linkedin`, `personal.github`, `personal.website`
-- **Salary expectations** -> Ask the user before filling (in autopilot mode: ask once on first encounter, remember for the rest of the run).
+- **Salary expectations** -> If `autopilot.salaryExpectation` is set in `profile.json`, use that value. For radio buttons or dropdowns, select the option that best matches the configured value. If `salaryExpectation` is not set, ask the user (in autopilot mode: ask once on first encounter, remember for the rest of the run).
 - **Start date** -> "Immediately" or "2 weeks notice" unless configured otherwise in `autopilot.defaultStartDate`.
 - **Cover letter** -> Generate a tailored cover letter using `/jobpilot:cover-letter` with the job description. The cover-letter skill already runs through the humanizer. Then determine the field type:
   - **Text area** -> paste the cover letter text directly into the field.
