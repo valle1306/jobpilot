@@ -1,5 +1,5 @@
 ---
-name: search-job
+name: search
 description: Search job boards for matching positions using Playwright. Filters by qualification fit against the user's resume. Respects job board config in profile.json.
 argument-hint: "<job_title_keywords_location>"
 ---
@@ -96,7 +96,7 @@ Output a ranked table sorted by match score (highest first):
 
 After presenting results, offer:
 
-- **"Apply to #N"** -> chain into `/jobpilot:apply-job` with that job's URL
+- **"Apply to #N"** -> chain into `/jobpilot:apply` with that job's URL
 - **"More details on #N"** -> navigate to that listing and show the full description
 - **"Search again"** -> refine the query and re-search
 - **"Cover letter for #N"** -> chain into `/jobpilot:cover-letter` with the job description

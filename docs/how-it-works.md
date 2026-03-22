@@ -27,11 +27,11 @@ Special invocations:
 - `/autopilot "resume"` - resume an interrupted run
 - `/autopilot "retry-failed <run-id>"` - retry failed applications from a completed run
 
-### Apply (`/apply-job`)
+### Apply (`/apply`)
 
 Single-job application. Navigates to the job page, performs a qualification fit review, handles login, and fills every form field from your profile and resume. Always asks for confirmation before submitting.
 
-### Search (`/search-job`)
+### Search (`/search`)
 
 Searches enabled job boards, scores results against your resume, and presents a ranked table. Offers next actions: apply, get details, or generate a cover letter for any result.
 
@@ -47,6 +47,10 @@ Writes a concise Upwork proposal (under 200 words) focused on the client's needs
 
 Generates role-specific prep material: behavioral questions with STAR-format answers from your experience, technical questions on the role's stack, system design scenarios, and gap analysis.
 
+### Dashboard (`/dashboard`)
+
+Aggregates stats across all autopilot runs: total applied, failed, skipped, success rate, per-board breakdown, and recent run history. Can export all applications to CSV for tracking in spreadsheets. Uses `scripts/run-stats.sh` and `scripts/export-csv.sh` to keep context lean.
+
 ### Humanizer (`/humanizer`)
 
 Rewrites text to remove AI writing patterns (significance inflation, promotional language, AI vocabulary, etc.) and add natural voice. Used automatically by cover letter and proposal skills.
@@ -61,15 +65,18 @@ jobpilot/
       auth.md           # Login flow, 2FA, registration, OAuth
       form-filling.md   # Field mapping, special fields, multi-page forms
       browser-tips.md   # Large page handling, token overflow, popups
-    apply-job/          # Single job application
+    apply/              # Single job application
     autopilot/          # Autonomous batch search + apply
     cover-letter/       # Cover letter generation
+    dashboard/          # Application tracking stats and export
     interview/          # Interview prep Q&A
-    search-job/         # Job board search
+    search/             # Job board search
     upwork-proposal/    # Upwork proposal generation
     humanizer/          # AI text humanizer (git submodule)
   scripts/
     applied-jobs.sh     # Returns previously applied jobs from run history
+    run-stats.sh        # Aggregates stats from all run files
+    export-csv.sh       # Exports applications to CSV
   docs/
     images/             # Screenshots for documentation
     configuration.md    # Detailed configuration reference

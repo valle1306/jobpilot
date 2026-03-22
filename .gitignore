@@ -2,6 +2,7 @@ profile.json
 node_modules/
 .playwright-mcp/
 *.pdf
+*.csv
 .claude/
 runs/
 snapshot-*.md

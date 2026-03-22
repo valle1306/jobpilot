@@ -20,7 +20,7 @@ Your `profile.json` is gitignored - credentials never leave your machine.
     "website": "https://janedoe.dev",
     "linkedin": "https://linkedin.com/in/janedoe",
     "github": "https://github.com/janedoe",
-    "resumePath": "/path/to/your/resume.pdf"
+    "resumes": { "default": "/path/to/your/resume.pdf" }
   },
   "workAuthorization": { ... },
   "eeo": { ... },
@@ -31,9 +31,23 @@ Your `profile.json` is gitignored - credentials never leave your machine.
 }
 ```
 
-## Resume
+## Resumes
 
-Set `personal.resumePath` to your resume file (PDF, DOCX, LaTeX, or plain text). All skills read it at runtime to understand your background. If you skip this, skills will ask on first run.
+Set `personal.resumes.default` to your resume file (PDF, DOCX, LaTeX, or plain text). All skills read it at runtime to understand your background. If you skip this, skills will ask on first run.
+
+For role-specific resumes, add more keys:
+
+```json
+"personal": {
+  "resumes": {
+    "default": "/path/to/resume.pdf",
+    "frontend": "/path/to/frontend-resume.pdf",
+    "backend": "/path/to/backend-resume.pdf"
+  }
+}
+```
+
+When applying, the skill automatically selects the best resume based on the job title and description (e.g., a "Frontend Developer" role uses the `frontend` resume). If no key matches, it uses `default`.
 
 ## Credentials
 
@@ -97,6 +111,8 @@ Controls the behavior of the `/autopilot` batch application skill.
   "confirmMode": "batch",
   "skipCompanies": ["CurrentEmployer Inc"],
   "skipTitleKeywords": ["intern", "principal"],
+  "minSalary": 80000,
+  "maxSalary": 200000,
   "defaultStartDate": "2 weeks notice"
 }
 ```
@@ -108,6 +124,8 @@ Controls the behavior of the `/autopilot` batch application skill.
 | `confirmMode` | `"batch"` | `"batch"` = review list before applying. `"auto"` = skip confirmation when all jobs score >= `minMatchScore` |
 | `skipCompanies` | `[]` | Company names to always skip |
 | `skipTitleKeywords` | `[]` | Title keywords to filter out |
+| `minSalary` | `0` | Minimum annual salary (USD). Jobs listing below this are skipped. 0 = no filter. |
+| `maxSalary` | `0` | Maximum annual salary (USD). Jobs listing above this are skipped. 0 = no filter. |
 | `defaultStartDate` | `"2 weeks notice"` | Default answer for start date fields |
 
 ## Work Authorization

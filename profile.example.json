@@ -7,7 +7,11 @@
     "website": "https://janedoe.dev",
     "linkedin": "https://www.linkedin.com/in/janedoe",
     "github": "https://github.com/janedoe",
-    "resumePath": "/path/to/your/resume.pdf"
+    "resumes": {
+      "default": "/path/to/your/resume.pdf",
+      "frontend": "/path/to/frontend-resume.pdf",
+      "backend": "/path/to/backend-resume.pdf"
+    }
   },
   "workAuthorization": {
     "usAuthorized": true,
@@ -105,6 +109,8 @@
     "confirmMode": "batch",
     "skipCompanies": [],
     "skipTitleKeywords": [],
+    "minSalary": 0,
+    "maxSalary": 0,
     "defaultStartDate": "2 weeks notice"
   }
 }

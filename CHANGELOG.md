@@ -2,15 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-03-22
+
+### Added
+
+- `dashboard` skill for application tracking stats and CSV export
+- Multi-resume support (`personal.resumes` in profile.json)
+- Salary range filter (`minSalary`/`maxSalary` in autopilot config)
+- Smart retry with `retryNotes` on failed applications for better retry strategies
+- `scripts/run-stats.sh` for aggregating stats across runs
+- `scripts/export-csv.sh` for exporting applications to CSV
+
 ## [1.0.0] - 2026-03-21
 
 ### Added
 
 - Initial release of JobPilot plugin
-- `apply-job` skill for automated job application form filling via Playwright
+- `apply` skill for automated job application form filling via Playwright
 - `cover-letter` skill for generating tailored cover letters
 - `upwork-proposal` skill for generating Upwork proposals
-- `search-job` skill for searching and ranking job board results
+- `search` skill for searching and ranking job board results
 - `interview` skill for generating interview prep Q&A
 - `humanizer` submodule integration for natural tone rewriting
 - Profile system with `profile.json` for storing personal info and credentials

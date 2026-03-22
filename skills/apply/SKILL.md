@@ -1,5 +1,5 @@
 ---
-name: apply-job
+name: apply
 description: Auto-fill job application forms via Playwright. Accepts a URL or pasted job page, reviews qualification fit, handles login, and fills forms with resume data.
 argument-hint: "<job_application_url_or_pasted_job_page>"
 ---

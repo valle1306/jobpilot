@@ -9,11 +9,12 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that auto
 | Skill | Command | What it does |
 | ----- | ------- | ------------ |
 | **Autopilot** | `/autopilot <query>` | Search boards, score matches, and apply to jobs autonomously in batch |
-| **Apply** | `/apply-job <url>` | Auto-fill a single job application form via browser automation |
-| **Search** | `/search-job <query>` | Search job boards and rank results by qualification fit |
+| **Apply** | `/apply <url>` | Auto-fill a single job application form via browser automation |
+| **Search** | `/search <query>` | Search job boards and rank results by qualification fit |
 | **Cover Letter** | `/cover-letter <job_desc>` | Generate a tailored cover letter matched to your experience |
 | **Upwork Proposal** | `/upwork-proposal <job_desc>` | Generate a concise, client-focused Upwork proposal |
 | **Interview Prep** | `/interview <job_desc>` | Generate Q&A prep (behavioral, technical, system design) |
+| **Dashboard** | `/dashboard` | View application stats, success rates, and export to CSV |
 | **Humanizer** | `/humanizer <text>` | Rewrite text to remove AI patterns and sound natural |
 
 ## Quick Start
@@ -58,10 +59,10 @@ Add to `.claude/settings.json`:
 /autopilot "senior fullstack developer Portland ME remote"
 
 # Apply to a single job
-/apply-job https://boards.greenhouse.io/company/jobs/12345
+/apply https://boards.greenhouse.io/company/jobs/12345
 
 # Search for jobs
-/search-job "software engineer remote"
+/search "software engineer remote"
 
 # Generate a cover letter
 /cover-letter We are looking for a senior full-stack developer...
@@ -74,6 +75,12 @@ Add to `.claude/settings.json`:
 
 # Resume an interrupted autopilot run
 /autopilot "resume"
+
+# View application tracking dashboard
+/dashboard
+
+# Export all applications to CSV
+/dashboard "export"
 ```
 
 ![Auto-filling a job application form with profile data](docs/images/form-autofill.png)

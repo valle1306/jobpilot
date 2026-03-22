@@ -11,7 +11,7 @@ Job applications often span multiple pages/steps. For each page:
    - Text inputs -> `browser_fill_form` or `browser_click` + `browser_type`
    - Dropdowns/selects -> `browser_select_option`
    - Checkboxes/radio buttons -> `browser_click`
-   - File uploads (resume) -> `browser_file_upload` with the resume path from `profile.json > personal.resumePath`
+   - File uploads (resume) -> `browser_file_upload` with the selected resume path from `personal.resumes` (see Resume Selection in setup.md)
    - Date fields -> use the appropriate date format for the field
 
 ## Special Fields

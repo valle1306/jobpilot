@@ -25,6 +25,8 @@ Read the `autopilot` section from `profile.json`. Apply these defaults for any m
 | `skipCompanies` | [] | Company names to skip |
 | `skipTitleKeywords` | [] | Title keywords to skip (e.g., "intern", "principal") |
 | `confirmMode` | "batch" | `"batch"` = review and approve the list before applying. `"auto"` = skip confirmation and apply immediately when ALL qualified jobs score >= `minMatchScore`. If any job scores below `minMatchScore`, falls back to batch confirmation. |
+| `minSalary` | 0 | Minimum annual salary (USD). Skip jobs that list compensation below this. 0 = no filter. |
+| `maxSalary` | 0 | Maximum annual salary (USD). Skip jobs above this. 0 = no filter. |
 | `defaultStartDate` | "2 weeks notice" | Default answer for start date fields |
 
 Inline argument overrides take precedence. Examples:
@@ -36,7 +38,7 @@ Inline argument overrides take precedence. Examples:
 Parse the argument to decide the run mode:
 
 - **`"resume"`** -> list incomplete runs from `${CLAUDE_PLUGIN_ROOT}/runs/`, ask the user to pick one, then skip to Phase 3 (apply loop) with remaining `approved` or `pending` jobs.
-- **`"retry-failed <run-id>"`** -> load the specified run, reset all `failed` jobs to `approved`, then skip to Phase 3.
+- **`"retry-failed <run-id>"`** -> load the specified run, reset all `failed` jobs to `approved`, then skip to Phase 3. **Before retrying each job, read its `retryNotes` field** (if set) to understand what went wrong last time and try a different approach (e.g., if the note says "Quick Apply button led to a broken iframe", try navigating to the company's careers page directly instead).
 - **Anything else** -> treat as a search query. Proceed to Phase 0.
 
 ## Phase 0: Resume Check for Existing Runs
@@ -138,6 +140,10 @@ Write scores and `matchReason` to the progress file.
 - Jobs below `minMatchScore` -> set `status: "skipped"`, `skipReason: "Below minimum match score (X < Y)"`
 - Jobs from companies in `skipCompanies` -> set `status: "skipped"`, `skipReason: "Company in skip list"`
 - Jobs matching `skipTitleKeywords` -> set `status: "skipped"`, `skipReason: "Title contains blocked keyword: <keyword>"`
+- Jobs with listed salary below `minSalary` (if > 0) -> set `status: "skipped"`, `skipReason: "Salary below minimum ($X < $Y)"`
+- Jobs with listed salary above `maxSalary` (if > 0) -> set `status: "skipped"`, `skipReason: "Salary above maximum ($X > $Y)"`
+
+**Note on salary filtering:** Only filter if the job listing explicitly shows a salary range in the preview. Do not skip jobs that don't mention salary -- many good jobs omit compensation from listings.
 
 Update the `summary` counts in the progress file.
 
@@ -245,6 +251,10 @@ Read and follow the instructions in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/form-f
 - Take a snapshot for debugging.
 - Update job status to `"failed"`.
 - Set `failReason` to a clear description (e.g., "CAPTCHA required", "Unexpected page: saw pricing page instead of form", "Form validation error: missing required field 'Portfolio URL'").
+- Set `retryNotes` with actionable context for a future retry attempt. Describe what was tried and suggest an alternative approach. Examples:
+  - `"Quick Apply opened a broken iframe. Try navigating to the company careers page directly: https://company.com/careers"`
+  - `"Form required a Portfolio URL field not in profile. User should add it to profile.json before retrying."`
+  - `"Login succeeded but application page returned 403. May need different credentials or direct application URL."`
 - Update `summary.failed` count.
 - **Continue to the next job.** Do not stop the run.
 
@@ -308,6 +318,6 @@ Progress saved to: runs/<run-id>.json
 7. **Deduplicate jobs** across boards before presenting to the user.
 8. **Pace applications.** Wait 3-5 seconds between submitting on the same board to reduce rate limiting risk. Use `browser_wait_for` with a brief timeout.
 9. **Progress file is the audit trail.** Update it after every state change. Never skip a write.
-10. **If the resume file doesn't exist** at `personal.resumePath`, **STOP the entire run** and ask the user to fix it. Save the run as `paused` so it can be resumed.
+10. **If the resume file doesn't exist** at the path in `personal.resumes.default`, **STOP the entire run** and ask the user to fix it. Save the run as `paused` so it can be resumed.
 
 Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/browser-tips.md` for handling large pages, popups, and general browser best practices.
