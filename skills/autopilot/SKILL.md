@@ -330,7 +330,7 @@ Progress saved to: runs/<run-id>.json
 2. **After batch approval, do NOT ask for per-job confirmation.** The whole point of autopilot is autonomous execution after the initial review.
 3. **Never create accounts** on any job board. If login is required and no credentials exist, skip that board.
 4. **Never process payments.** If an application requires payment (premium apply, etc.), mark as `failed` with `failReason: "Payment required"` and continue.
-5. **Handle CAPTCHAs** by marking the job as `failed` with `failReason: "CAPTCHA required"` and continuing to the next job. Do not ask the user to solve it mid-run.
+5. **Handle CAPTCHAs and email verification codes** by pausing and asking the user to solve/provide them (see `auth.md`). These are typically one-time per board -- once resolved, remaining jobs on that board proceed without interruption. Only mark a job as failed if the user explicitly says to skip it, or if the CAPTCHA appears mid-application (not during login).
 6. **Be honest about match scores.** A 5/10 is a stretch. Don't inflate scores.
 7. **Deduplicate jobs** across boards before presenting to the user.
 8. **Pace applications.** Wait 3-5 seconds between submitting on the same board to reduce rate limiting risk. Use `browser_wait_for` with a brief timeout.
