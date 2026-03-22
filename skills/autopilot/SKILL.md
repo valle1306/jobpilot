@@ -10,12 +10,9 @@ You autonomously search job boards, score results against the user's resume, pre
 
 ## Setup
 
-### Load Profile
+### Load Profile and Resume
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/profile.json`.
-   - If it does not exist, copy `${CLAUDE_PLUGIN_ROOT}/profile.example.json` to `${CLAUDE_PLUGIN_ROOT}/profile.json` and ask the user to fill in their details. **STOP** until filled.
-2. Read `personal.resumePath`. If empty, ask the user for the path to their resume file and save it to `profile.json`.
-3. Read the resume file to extract candidate details (education, experience, skills, projects, technologies).
+Read and follow the instructions in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/setup.md` to load the profile, resume, and credentials.
 
 ### Load Configuration
 
@@ -97,22 +94,11 @@ Read the `jobBoards` array from `profile.json`. Only search boards where `enable
 
 For each searchable board:
 
-#### Authenticate First
-
-**Always attempt to log in before searching** if the board has credentials (its own `email`/`password`, or fall back to `credentials.default`). Many boards show search results without login but limit functionality (no apply, fewer results, rate limiting).
+#### Authenticate
 
 1. Use `browser_navigate` to go to the board's `searchUrl` (defined in the board entry).
-2. Use `browser_snapshot` to assess the page state.
-3. **Check if already logged in** (look for profile avatar, account menu, username, or "Sign out" link). If already logged in, skip to search.
-4. **Log in proactively:**
-   - Look for "Sign in", "Log in", or "Sign up" buttons/links on the page and click to go to the login page.
-   - Look up the board's `email` and `password` from its `jobBoards` entry. If empty, fall back to `credentials.default`.
-   - If no credentials exist at all, proceed without login (some boards allow searching without auth).
-   - Fill the email/username and password fields, click sign-in/log-in.
-   - Wait for navigation to complete, then take a snapshot to confirm login succeeded.
-   - If login fails, proceed without auth and note the issue -- some boards may still allow searching.
-   - If 2FA/MFA is required, ask the user to complete it manually.
-5. After login (or if skipping auth), navigate back to the board's `searchUrl` if needed, then proceed to search.
+2. Read and follow the instructions in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/auth.md` to log in proactively.
+3. After login (or if skipping auth), navigate back to the board's `searchUrl` if needed, then proceed to search.
 
 #### Search and Extract Results
 
@@ -225,55 +211,22 @@ For each job with `status: "approved"`, in order of match score (highest first):
 
 ### Step 3.3: Authentication (if needed)
 
-1. Extract the domain from the job URL.
-2. Look up credentials: find the matching entry in the `jobBoards` array (where `domain` matches or is contained in the URL), then try `credentials.<domain>`, then fall back to `credentials.default`.
-3. Fill email/username and password fields.
-4. Click the login/sign-in button.
-5. Wait for navigation, then snapshot.
-6. **If login fails:**
-   - Mark this job as `failed` with `failReason: "Login failed for <domain>"`.
-   - Mark ALL remaining approved jobs on the same domain as `failed` with `failReason: "Login failed for <domain> -- skipped after earlier failure"`.
-   - Continue to the next job on a different domain.
-7. **If 2FA/MFA is required:**
-   - Ask the user to complete it manually.
-   - Wait for confirmation, then continue.
+Read and follow the instructions in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/auth.md` to log in.
+
+**Additional autopilot rules for auth failures:**
+- **If login fails:** Mark this job as `failed` with `failReason: "Login failed for <domain>"`. Mark ALL remaining approved jobs on the same domain as `failed` with `failReason: "Login failed for <domain> -- skipped after earlier failure"`. Continue to the next job on a different domain.
+- **If 2FA/MFA is required:** Ask the user to complete it manually. Wait for confirmation, then continue.
 
 ### Step 3.4: Fill Application Forms
 
-For each page of the application form:
+Read and follow the instructions in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/form-filling.md`.
 
-1. **Take a snapshot** of the current form state.
-2. **Identify all form fields** -- text inputs, textareas, selects, checkboxes, radio buttons, file uploads.
-3. **Map each field** to the candidate's profile and resume data.
-4. **Fill fields** using Playwright MCP tools:
-   - Text inputs -> `browser_fill_form` or `browser_click` + `browser_type`
-   - Dropdowns/selects -> `browser_select_option`
-   - Checkboxes/radio buttons -> `browser_click`
-   - File uploads (resume) -> `browser_file_upload` with the path from `profile.json > personal.resumePath`
-   - Date fields -> appropriate date format for the field
+**Autopilot-specific overrides:**
+- **Salary expectations** -> On the FIRST form that asks this in the run, ask the user. Remember their answer for all subsequent applications in this run.
+- **Start date** -> use `autopilot.defaultStartDate` from config (default: "2 weeks notice").
+- **Custom questions** -> Make a reasonable attempt from resume. Log uncertain answers in the job's notes but do not pause the run.
 
-5. **Handle special fields:**
-   - **Address fields** -> use `profile.json > address.*`
-   - **Salary expectations** -> On the FIRST form that asks this in the run, ask the user. Remember their answer for all subsequent applications in this run.
-   - **Start date** -> use `autopilot.defaultStartDate` from config (default: "2 weeks notice")
-   - **Cover letter** -> invoke `/jobpilot:cover-letter` with the job description extracted from the listing page. Use the generated cover letter as-is (it already runs through the humanizer).
-   - **"How did you hear about us?"** -> "Job board" or "Company website"
-   - **Years of experience** -> calculate from the earliest work experience date in the resume
-   - **Custom questions** -> use best judgment from resume. If genuinely uncertain about a critical question, log it in the job's notes but make a reasonable attempt.
-   - **Work authorization / visa sponsorship** -> Use `profile.json > workAuthorization`. Answer "Are you authorized to work in the US?" with `usAuthorized`, "Will you require sponsorship?" with `requiresSponsorship`, visa status with `visaStatus`, and OPT details with `optExtension`. If the field is a dropdown, select the closest matching option.
-   - **EEO/Diversity questions** -> "Prefer not to disclose" when available
-   - **Phone number** -> use `profile.json > personal.phone`
-   - **LinkedIn/GitHub/Website** -> use `profile.json > personal.linkedin`, `personal.github`, `personal.website`
-
-6. **Take a snapshot** after filling to verify.
-
-### Step 3.5: Multi-Page Navigation
-
-1. After filling each page, look for "Next", "Continue", "Save & Continue" buttons.
-2. Click to proceed.
-3. Repeat Step 3.4 for each new page.
-
-### Step 3.6: Submit
+### Step 3.5: Submit
 
 **In autonomous mode, submit the application without waiting for per-job confirmation.** The user already approved the batch in Phase 2.
 
@@ -281,7 +234,7 @@ For each page of the application form:
 2. Use `browser_wait_for` to confirm submission.
 3. Take a snapshot to verify success.
 
-### Step 3.7: Record Result
+### Step 3.6: Record Result
 
 **On success:**
 - Update job status to `"applied"`.
@@ -295,13 +248,13 @@ For each page of the application form:
 - Update `summary.failed` count.
 - **Continue to the next job.** Do not stop the run.
 
-### Step 3.8: Check Limits
+### Step 3.7: Check Limits
 
 After each application:
 1. Update `summary.remaining` count.
 2. If `summary.applied >= config.maxApplications`, mark all remaining `approved` jobs as `skipped` with `skipReason: "Max applications limit reached"`. End the loop.
 
-### Step 3.9: Update Progress File
+### Step 3.8: Update Progress File
 
 **After every status change**, read the current progress file, update the relevant job and summary fields, update `updatedAt`, and write it back. This ensures the run can be resumed from the exact point of interruption.
 
@@ -351,22 +304,11 @@ Progress saved to: runs/<run-id>.json
 3. **Never create accounts** on any job board. If login is required and no credentials exist, skip that board.
 4. **Never process payments.** If an application requires payment (premium apply, etc.), mark as `failed` with `failReason: "Payment required"` and continue.
 5. **Handle CAPTCHAs** by marking the job as `failed` with `failReason: "CAPTCHA required"` and continuing to the next job. Do not ask the user to solve it mid-run.
-6. **Handle popups and modals** -- close cookie banners, notification prompts, and overlays that block forms.
-7. **Be patient with page loads** -- use `browser_wait_for` after navigation and form submissions.
-8. **Take snapshots frequently** -- after every major action (navigation, form fill, submit) to verify state.
-9. **Be honest about match scores.** A 5/10 is a stretch. Don't inflate scores.
-10. **Deduplicate jobs** across boards before presenting to the user.
-11. **Pace applications.** Wait 3-5 seconds between submitting on the same board to reduce rate limiting risk. Use `browser_wait_for` with a brief timeout.
-12. **Never guess passwords.** Always read from profile.json credentials.
-13. **Max 25 applications hard cap** regardless of what the user configures. If `maxApplicationsPerRun` exceeds 25, cap it at 25.
-14. **Progress file is the audit trail.** Update it after every state change. Never skip a write.
-15. **If the resume file doesn't exist** at `personal.resumePath`, **STOP the entire run** and ask the user to fix it. Save the run as `paused` so it can be resumed.
+6. **Be honest about match scores.** A 5/10 is a stretch. Don't inflate scores.
+7. **Deduplicate jobs** across boards before presenting to the user.
+8. **Pace applications.** Wait 3-5 seconds between submitting on the same board to reduce rate limiting risk. Use `browser_wait_for` with a brief timeout.
+9. **Max 25 applications hard cap** regardless of what the user configures. If `maxApplicationsPerRun` exceeds 25, cap it at 25.
+10. **Progress file is the audit trail.** Update it after every state change. Never skip a write.
+11. **If the resume file doesn't exist** at `personal.resumePath`, **STOP the entire run** and ask the user to fix it. Save the run as `paused` so it can be resumed.
 
-## Handling Large Pages
-
-Job board pages can be very large and cause token overflow errors when Playwright returns the full page snapshot. To avoid this:
-
-1. **Use targeted snapshots.** After an action, if the full snapshot exceeds token limits, use `browser_snapshot` with a `ref` parameter to get only a specific element's subtree (e.g., the results list, the form container) instead of the entire page.
-2. **Avoid redundant snapshots.** Actions like `browser_click` and `browser_type` return a snapshot automatically. If you get a token overflow error from an action's response, do NOT retry the same action. Instead, use a targeted `browser_snapshot` with a `ref` to read just the part of the page you need.
-3. **When a tool returns a token overflow error**, the result is saved to a file. You can use the `Read` tool with `offset` and `limit` to read portions of that file, or use `Grep` to search within it for specific content (e.g., job titles, result lists).
-4. **Prefer `browser_snapshot`** over relying on action return values for page state assessment on large pages.
+Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/browser-tips.md` for handling large pages, popups, and general browser best practices.
