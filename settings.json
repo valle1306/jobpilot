@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__playwright__*",
+      "Skill(jobpilot:humanizer)",
+      "Skill(jobpilot:cover-letter)",
+      "Skill(jobpilot:upwork-proposal)"
+    ]
+  }
+}

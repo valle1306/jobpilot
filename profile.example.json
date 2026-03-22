@@ -1,0 +1,58 @@
+{
+  "personal": {
+    "firstName": "",
+    "lastName": "",
+    "email": "",
+    "phone": "",
+    "website": "",
+    "linkedin": "",
+    "github": "",
+    "resumePath": ""
+  },
+  "address": {
+    "street": "",
+    "aptUnit": "",
+    "city": "",
+    "state": "",
+    "zipCode": "",
+    "country": ""
+  },
+  "credentials": {
+    "default": {
+      "email": "",
+      "password": ""
+    }
+  },
+  "jobBoards": {
+    "linkedin.com": {
+      "enabled": true,
+      "email": "",
+      "password": ""
+    },
+    "indeed.com": {
+      "enabled": true,
+      "email": "",
+      "password": ""
+    },
+    "glassdoor.com": {
+      "enabled": false,
+      "email": "",
+      "password": ""
+    },
+    "greenhouse.io": {
+      "enabled": true,
+      "email": "",
+      "password": ""
+    },
+    "lever.co": {
+      "enabled": true,
+      "email": "",
+      "password": ""
+    },
+    "workday.com": {
+      "enabled": true,
+      "email": "",
+      "password": ""
+    }
+  }
+}
