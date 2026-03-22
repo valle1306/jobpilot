@@ -15,6 +15,14 @@
     "visaStatus": "OPT",
     "optExtension": "STEM OPT"
   },
+  "eeo": {
+    "gender": "Prefer not to disclose",
+    "race": "Prefer not to disclose",
+    "ethnicity": "Prefer not to disclose",
+    "hispanicOrLatino": "Prefer not to disclose",
+    "veteranStatus": "Prefer not to disclose",
+    "disabilityStatus": "Prefer not to disclose"
+  },
   "address": {
     "street": "123 Main St",
     "aptUnit": "Apt 4B",

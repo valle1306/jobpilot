@@ -28,7 +28,7 @@ Job applications often span multiple pages/steps. For each page:
 - **Years of experience** -> Calculate from the earliest work experience date in the resume.
 - **Custom questions** -> Use best judgment from the candidate's resume. If genuinely uncertain, ask the user (in autopilot mode: make a reasonable attempt and log it in notes).
 - **Work authorization / visa sponsorship** -> Use `profile.json > workAuthorization`. Answer "Are you authorized to work in the US?" with `usAuthorized`, "Will you require sponsorship?" with `requiresSponsorship`, visa status with `visaStatus`, and OPT details with `optExtension`. If the field is a dropdown, select the closest matching option.
-- **EEO/Diversity questions** -> Select "Prefer not to disclose" when available, or ask the user.
+- **EEO/Diversity questions** -> Use `profile.json > eeo` to fill these fields. Match `gender` for gender questions, `race` for race, `ethnicity` or `hispanicOrLatino` for ethnicity/Hispanic or Latino questions, `veteranStatus` for veteran status, and `disabilityStatus` for disability questions. If the field is a dropdown, select the closest matching option. If a specific field is missing from the `eeo` section, default to "Prefer not to disclose".
 
 ## Multi-Page Navigation
 

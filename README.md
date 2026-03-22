@@ -2,27 +2,23 @@
 
 A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that automates your job search end-to-end: find matching positions, auto-fill applications, generate cover letters, write proposals, and prep for interviews - all powered by your resume.
 
+![Autopilot batch confirmation - jobs scored and ranked against your resume](./assets/batch-confirmation.png)
+
 ## What It Does
 
 | Skill | Command | What it does |
 | ----- | ------- | ------------ |
-| **Autopilot** | `/jobpilot:autopilot <query>` | Search boards, score matches, and apply to jobs autonomously in batch |
-| **Apply** | `/jobpilot:apply-job <url>` | Auto-fill a single job application form via browser automation |
-| **Search** | `/jobpilot:search-job <query>` | Search job boards and rank results by qualification fit |
-| **Cover Letter** | `/jobpilot:cover-letter <job_desc>` | Generate a tailored cover letter matched to your experience |
-| **Upwork Proposal** | `/jobpilot:upwork-proposal <job_desc>` | Generate a concise, client-focused Upwork proposal |
-| **Interview Prep** | `/jobpilot:interview <job_desc>` | Generate Q&A prep (behavioral, technical, system design) |
-| **Humanizer** | `/jobpilot:humanizer <text>` | Rewrite text to remove AI patterns and sound natural |
+| **Autopilot** | `/autopilot <query>` | Search boards, score matches, and apply to jobs autonomously in batch |
+| **Apply** | `/apply-job <url>` | Auto-fill a single job application form via browser automation |
+| **Search** | `/search-job <query>` | Search job boards and rank results by qualification fit |
+| **Cover Letter** | `/cover-letter <job_desc>` | Generate a tailored cover letter matched to your experience |
+| **Upwork Proposal** | `/upwork-proposal <job_desc>` | Generate a concise, client-focused Upwork proposal |
+| **Interview Prep** | `/interview <job_desc>` | Generate Q&A prep (behavioral, technical, system design) |
+| **Humanizer** | `/humanizer <text>` | Rewrite text to remove AI patterns and sound natural |
 
 ## Quick Start
 
 ### 1. Install the plugin
-
-```bash
-claude plugin install jobpilot
-```
-
-Or for local development:
 
 ```bash
 git clone --recursive https://github.com/suxrobgm/jobpilot.git
@@ -30,6 +26,14 @@ claude --plugin-dir ./jobpilot
 ```
 
 > Use `--recursive` to pull the [humanizer](https://github.com/blader/humanizer) submodule.
+
+![Launching JobPilot with claude --plugin-dir](./assets/launch.png)
+
+Once available on the Claude plugin marketplace, you'll also be able to install with:
+
+```bash
+claude plugin install jobpilot
+```
 
 ### 2. Create your profile
 
@@ -56,6 +60,14 @@ Edit `profile.json` with your info. Here's the structure:
     "requiresSponsorship": false,
     "visaStatus": "OPT",
     "optExtension": "STEM OPT"
+  },
+  "eeo": {
+    "gender": "Prefer not to disclose",
+    "race": "Prefer not to disclose",
+    "ethnicity": "Prefer not to disclose",
+    "hispanicOrLatino": "Prefer not to disclose",
+    "veteranStatus": "Prefer not to disclose",
+    "disabilityStatus": "Prefer not to disclose"
   },
   "address": {
     "street": "123 Main St",
@@ -103,15 +115,17 @@ Add to `.claude/settings.json` to avoid permission prompts on every browser acti
 ### Apply to a single job
 
 ```bash
-/jobpilot:apply-job https://boards.greenhouse.io/company/jobs/12345
+/apply-job https://boards.greenhouse.io/company/jobs/12345
 ```
 
 Navigates to the job page, reviews your qualification fit, logs in, fills every form field from your profile and resume, and waits for your confirmation before submitting.
 
+![Auto-filling a job application form with profile data](./assets/form-autofill.png)
+
 ### Search for jobs
 
 ```bash
-/jobpilot:search-job "senior fullstack developer Portland ME remote"
+/search-job "senior fullstack developer Portland ME remote"
 ```
 
 Searches your enabled boards, scores each result against your resume (1-10), and presents a ranked table. From there you can apply, get details, or generate a cover letter for any result.
@@ -119,7 +133,7 @@ Searches your enabled boards, scores each result against your resume (1-10), and
 ### Autopilot: batch search and apply
 
 ```bash
-/jobpilot:autopilot "senior fullstack developer Portland ME remote"
+/autopilot "senior fullstack developer Portland ME remote"
 ```
 
 The full autonomous workflow:
@@ -133,14 +147,16 @@ The full autonomous workflow:
 Resume an interrupted run or retry failures:
 
 ```bash
-/jobpilot:autopilot "resume"
-/jobpilot:autopilot "retry-failed 2026-03-22T14-30-00_senior-fullstack-developer"
+/autopilot "resume"
+/autopilot "retry-failed 2026-03-22T14-30-00_senior-fullstack-developer"
 ```
+
+![Autopilot run summary showing applied, failed, and skipped jobs](./assets/run-summary.png)
 
 ### Generate a cover letter
 
 ```bash
-/jobpilot:cover-letter We're looking for a senior full-stack developer with React and .NET experience...
+/cover-letter We're looking for a senior full-stack developer with React and .NET experience...
 ```
 
 Analyzes the job description, matches it against your resume, writes a tailored cover letter, and passes it through the humanizer for natural tone.
@@ -148,13 +164,13 @@ Analyzes the job description, matches it against your resume, writes a tailored 
 ### Write an Upwork proposal
 
 ```bash
-/jobpilot:upwork-proposal Need a React/Node developer to build an analytics dashboard...
+/upwork-proposal Need a React/Node developer to build an analytics dashboard...
 ```
 
 ### Prep for an interview
 
 ```bash
-/jobpilot:interview We're hiring a backend engineer to work on our API platform...
+/interview We're hiring a backend engineer to work on our API platform...
 ```
 
 Generates role-specific prep: behavioral questions with STAR-format answers from your experience, technical deep-dives on the role's stack, system design scenarios, and gap analysis.
@@ -213,9 +229,24 @@ The `workAuthorization` section auto-fills visa and sponsorship questions on app
 }
 ```
 
+### EEO / Diversity Questions
+
+The `eeo` section auto-fills gender, race, ethnicity, veteran status, and disability questions. Set each field to your answer or `"Prefer not to disclose"`:
+
+```json
+"eeo": {
+  "gender": "Prefer not to disclose",
+  "race": "Prefer not to disclose",
+  "ethnicity": "Prefer not to disclose",
+  "hispanicOrLatino": "Prefer not to disclose",
+  "veteranStatus": "Prefer not to disclose",
+  "disabilityStatus": "Prefer not to disclose"
+}
+```
+
 ## How It Works
 
-- All skills are **prompt-based** -- no compiled code, just markdown instruction files that Claude follows at runtime
+- All skills are **prompt-based** - no compiled code, just markdown instruction files that Claude follows at runtime
 - Browser automation uses [Playwright MCP](https://github.com/anthropics/claude-code/blob/main/docs/mcp.md) for navigation, form filling, and page reading
 - Shared logic (authentication, form filling, browser tips) lives in `skills/_shared/` and is referenced by each skill
 - The autopilot skill tracks progress in `runs/*.json` files so interrupted runs can resume exactly where they left off
@@ -224,7 +255,7 @@ The `workAuthorization` section auto-fills visa and sponsorship questions on app
 
 ## Credits
 
-- [Humanizer](https://github.com/blader/humanizer) by blader -- included as a git submodule (MIT License)
+- [Humanizer](https://github.com/blader/humanizer) by blader - included as a git submodule (MIT License)
 
 ## License
 
