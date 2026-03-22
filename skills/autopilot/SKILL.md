@@ -21,10 +21,10 @@ Read the `autopilot` section from `profile.json`. Apply these defaults for any m
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `minMatchScore` | 6 | Minimum score (1-10) to qualify for application |
-| `maxApplicationsPerRun` | 10 | Max jobs to apply to in one run (hard cap: 25) |
+| `maxApplicationsPerRun` | 10 | Max jobs to apply to in one run |
 | `skipCompanies` | [] | Company names to skip |
 | `skipTitleKeywords` | [] | Title keywords to skip (e.g., "intern", "principal") |
-| `confirmMode` | "batch" | `"batch"` = review and approve the list before applying. `"auto"` = skip confirmation and apply immediately when ALL qualified jobs score >= 8. If any job scores below 8, falls back to batch confirmation. |
+| `confirmMode` | "batch" | `"batch"` = review and approve the list before applying. `"auto"` = skip confirmation and apply immediately when ALL qualified jobs score >= 6. If any job scores below 6, falls back to batch confirmation. |
 | `defaultStartDate` | "2 weeks notice" | Default answer for start date fields |
 
 Inline argument overrides take precedence. Examples:
@@ -145,13 +145,13 @@ Update the `summary` counts in the progress file.
 
 ### Auto Mode (`confirmMode: "auto"`)
 
-If `confirmMode` is `"auto"` AND **every** qualified job has a match score >= 8:
+If `confirmMode` is `"auto"` AND **every** qualified job has a match score >= 6:
 
 1. Log the qualified jobs table (same format as batch mode) for the user's reference.
 2. Mark all qualified jobs as `status: "approved"` automatically.
 3. Proceed directly to Phase 3 without waiting for user input.
 
-**If any qualified job scores below 8, fall back to batch mode** regardless of the `confirmMode` setting. This ensures borderline matches always get human review.
+**If any qualified job scores below 6, fall back to batch mode** regardless of the `confirmMode` setting. This ensures borderline matches always get human review.
 
 ### Batch Mode (`confirmMode: "batch"`, or auto mode fallback)
 
@@ -307,8 +307,7 @@ Progress saved to: runs/<run-id>.json
 6. **Be honest about match scores.** A 5/10 is a stretch. Don't inflate scores.
 7. **Deduplicate jobs** across boards before presenting to the user.
 8. **Pace applications.** Wait 3-5 seconds between submitting on the same board to reduce rate limiting risk. Use `browser_wait_for` with a brief timeout.
-9. **Max 25 applications hard cap** regardless of what the user configures. If `maxApplicationsPerRun` exceeds 25, cap it at 25.
-10. **Progress file is the audit trail.** Update it after every state change. Never skip a write.
-11. **If the resume file doesn't exist** at `personal.resumePath`, **STOP the entire run** and ask the user to fix it. Save the run as `paused` so it can be resumed.
+9. **Progress file is the audit trail.** Update it after every state change. Never skip a write.
+10. **If the resume file doesn't exist** at `personal.resumePath`, **STOP the entire run** and ask the user to fix it. Save the run as `paused` so it can be resumed.
 
 Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/browser-tips.md` for handling large pages, popups, and general browser best practices.

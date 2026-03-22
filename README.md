@@ -50,6 +50,12 @@ Edit `profile.json` with your personal info, address, and credentials:
     "phone": "(555) 123-4567",
     "resumePath": "/path/to/your/resume.pdf"
   },
+  "workAuthorization": {
+    "usAuthorized": true,
+    "requiresSponsorship": false,
+    "visaStatus": "OPT",
+    "optExtension": "STEM OPT"
+  },
   "address": {
     "street": "123 Main St",
     "city": "Portland",
@@ -119,8 +125,8 @@ Add an `autopilot` section to `profile.json` to control batch application behavi
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
 | `minMatchScore` | 6 | Minimum fit score (1-10) to qualify for application |
-| `maxApplicationsPerRun` | 10 | Max jobs to apply to per run (hard cap: 25) |
-| `confirmMode` | "batch" | `"batch"` = review list before applying. `"auto"` = skip confirmation when all jobs score >= 8 |
+| `maxApplicationsPerRun` | 10 | Max jobs to apply to per run |
+| `confirmMode` | "batch" | `"batch"` = review list before applying. `"auto"` = skip confirmation when all jobs score >= 6 |
 | `skipCompanies` | [] | Company names to always skip |
 | `skipTitleKeywords` | [] | Title keywords to filter out |
 | `defaultStartDate` | "2 weeks notice" | Default answer for start date fields |
