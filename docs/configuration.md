@@ -138,7 +138,9 @@ Auto-fills visa and sponsorship questions on application forms.
   "usAuthorized": true,
   "requiresSponsorship": false,
   "visaStatus": "OPT",
-  "optExtension": "STEM OPT"
+  "optExtension": "STEM OPT",
+  "willingToRelocate": true,
+  "preferredLocations": ["Portland, ME", "Boston, MA", "Remote"]
 }
 ```
 
@@ -148,6 +150,8 @@ Auto-fills visa and sponsorship questions on application forms.
 | `requiresSponsorship` | "Will you now or in the future require sponsorship?" |
 | `visaStatus` | Current visa type (e.g., `"OPT"`, `"H-1B"`, `"Green Card"`, `"US Citizen"`) |
 | `optExtension` | OPT extension details if applicable (e.g., `"STEM OPT"`) |
+| `willingToRelocate` | "Are you willing to relocate?" (`true` / `false`) |
+| `preferredLocations` | Target locations for relocation questions. Empty `[]` or `["Anywhere"]` = open to any location. |
 
 ## EEO / Diversity Questions
 

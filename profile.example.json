@@ -17,7 +17,9 @@
     "usAuthorized": true,
     "requiresSponsorship": false,
     "visaStatus": "OPT",
-    "optExtension": "STEM OPT"
+    "optExtension": "STEM OPT",
+    "willingToRelocate": true,
+    "preferredLocations": ["Portland, ME", "Boston, MA", "Remote"]
   },
   "eeo": {
     "gender": "Prefer not to disclose",
