@@ -19,6 +19,11 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that auto
 
 ## Quick Start
 
+### Prerequisites
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
+- [jq](https://jqlang.github.io/jq/download/) is required by utility scripts (auto-installed on first run if missing)
+
 ### 1. Install
 
 ```bash
@@ -28,7 +33,7 @@ claude --plugin-dir ./jobpilot
 
 ![Launching JobPilot with claude --plugin-dir](docs/images/launch.png)
 
-> Use `--recursive` to pull the [humanizer](https://github.com/blader/humanizer) submodule. Once available on the marketplace: `claude plugin install jobpilot`
+> Use `--recursive` to pull the [humanizer](https://github.com/blader/humanizer) submodule.
 
 ### 2. Set up your profile
 

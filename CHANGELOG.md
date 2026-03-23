@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-03-22
+
+### Added
+
+- Persistent applied-jobs database (`applied-jobs.json`) to prevent duplicate applications across runs and skills
+- `scripts/check-applied.sh` to check if a job URL was already applied to
+- `scripts/log-applied.sh` to log successful applications to the database
+- Relocation preferences (`willingToRelocate`, `preferredLocations`) in work authorization config
+- Strengthened `browser_snapshot` guidance to always use `ref` parameter for targeted snapshots
+
+### Changed
+
+- All shell scripts now use `jq` only (removed `node` and `python3` fallbacks) for simpler permissions
+- Improved context window efficiency with targeted browser snapshots
+
 ## [1.1.0] - 2026-03-22
 
 ### Added

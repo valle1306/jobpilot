@@ -122,7 +122,13 @@ Handle rate limiting gracefully -- if a board blocks or throttles, note it and m
 
 **Cross-board deduplication:** Remove duplicate jobs across boards. A duplicate = same company name AND same or very similar job title. Keep the entry with the richer description.
 
-**Previously applied filter:** Before scoring, run the script `bash ${CLAUDE_PLUGIN_ROOT}/scripts/applied-jobs.sh` to get a JSON array of all previously applied jobs (each with `url`, `title`, `company`, `runId`). Compare each newly found job against this list by matching on URL (exact match) or company name + job title (fuzzy match). If a job was previously applied to, mark it as `status: "skipped"` with `skipReason: "Already applied in run <runId>"` and exclude it from scoring and confirmation.
+**Previously applied filter:** Before scoring, check each job URL against the persistent applied-jobs database:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-applied.sh "<job-url>"
+```
+
+If the script outputs `already-applied` (exit code 0), mark the job as `status: "skipped"` with `skipReason: "Already applied (found in applied-jobs database)"` and exclude it from scoring and confirmation.
 
 ### Step 1.4: Score and Filter
 
@@ -247,6 +253,10 @@ Read and follow the instructions in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/form-f
 - Update job status to `"applied"`.
 - Set `appliedAt` to the current ISO timestamp.
 - Update `summary.applied` count.
+- Log to the persistent applied-jobs database:
+  ```bash
+  bash ${CLAUDE_PLUGIN_ROOT}/scripts/log-applied.sh "<job-url>" "<title>" "<company>" "autopilot" "<run-id>"
+  ```
 
 **On failure** (any of these: CAPTCHA, unexpected page state, form error, submission error, page crash):
 - Take a snapshot for debugging.

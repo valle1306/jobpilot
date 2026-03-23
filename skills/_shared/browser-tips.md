@@ -18,17 +18,42 @@ Playwright MCP is configured with `--snapshot-mode none`. This means **actions d
 - After clicking "Next" on a multi-page form -- one snapshot after the new page loads is enough
 - After closing a popup -- just proceed with the next action
 
-### Targeted snapshots
+### Targeted snapshots (CRITICAL)
 
-Always try `browser_snapshot` with a `ref` parameter first to get only a specific element's subtree (e.g., the form container, the results list) instead of the entire page. This dramatically reduces token usage on large pages.
+**ALWAYS use `browser_snapshot` with a `ref` parameter.** Never call `browser_snapshot` without `ref` unless it's the very first snapshot after navigating to a completely new page and you don't know any element refs yet.
+
+Strategy:
+
+1. **First visit to a page** -- call `browser_snapshot` without `ref` once. Immediately identify the key container refs (form, results list, main content area).
+2. **All subsequent snapshots** -- use `ref` to target only the element you need:
+   - Form filling: snapshot the form container, not the whole page
+   - Search results: snapshot the results list element, not the whole page
+   - After clicking a button: snapshot the relevant section that changed, not the whole page
+   - Login verification: snapshot the header/nav area to check for logged-in state
+3. **If even a targeted snapshot is too large** (e.g., a massive form), narrow further -- snapshot individual form sections or fieldsets.
+
+Example flow:
+
+```text
+browser_snapshot()                          # First visit: get full page, find refs
+browser_snapshot(ref: "form-container")     # Target the form only
+browser_fill_form(...)                      # Fill fields
+browser_snapshot(ref: "form-container")     # Verify form state
+browser_click(ref: "submit-btn")            # Submit
+browser_snapshot(ref: "main-content")       # Check result
+```
+
+### Why this matters
+
+Full-page snapshots on job boards can be 50,000-120,000 tokens. A targeted form snapshot is typically 2,000-5,000 tokens. In autopilot mode, this is the difference between applying to 3 jobs vs 15+ jobs before context runs out.
 
 ## Handling Token Overflow
 
-If a snapshot still exceeds token limits:
+If a snapshot still exceeds token limits even with `ref`:
 
-1. The result is saved to a file. Use the `Read` tool with `offset` and `limit` to read portions, or use `Grep` to search for specific content (e.g., job titles, form fields).
-2. **Do NOT use inline Python/Node scripts to parse these files** -- always use the built-in `Read` and `Grep` tools instead.
-3. Try a more targeted `browser_snapshot` with a `ref` to a smaller element.
+1. Narrow the `ref` further -- target a smaller child element (a single fieldset, a single result card).
+2. If the result is saved to a file, use the `Read` tool with `offset` and `limit` to read portions, or use `Grep` to search for specific content (e.g., job titles, form fields).
+3. **Do NOT use inline Python/Node scripts to parse these files** -- always use the built-in `Read` and `Grep` tools, or shell scripts in `scripts/` using `jq`/`grep`.
 
 ## General Best Practices
 

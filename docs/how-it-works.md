@@ -6,7 +6,7 @@
 - Browser automation uses [Playwright MCP](https://github.com/anthropics/claude-code/blob/main/docs/mcp.md) for navigation, form filling, and page reading
 - Shared logic (authentication, form filling, browser tips) lives in `skills/_shared/` and is referenced by each skill
 - The autopilot skill tracks progress in `runs/*.json` files so interrupted runs can resume exactly where they left off
-- Previously applied jobs are automatically excluded from future searches using `scripts/applied-jobs.sh`
+- A persistent applied-jobs database (`applied-jobs.json`) prevents duplicate applications even if run files are deleted. Every successful application is logged via `scripts/log-applied.sh` and checked before applying via `scripts/check-applied.sh`
 - Cover letters and proposals are passed through the [humanizer](https://github.com/blader/humanizer) to remove AI writing patterns
 
 ## Skills in Detail
@@ -18,7 +18,7 @@ The flagship skill. Combines search and apply into a single autonomous workflow:
 1. **Search** - navigates to each enabled job board, logs in, searches for matching jobs
 2. **Score** - rates each job against your resume (1-10) on tech stack, experience, seniority, location
 3. **Filter** - removes jobs below `minMatchScore`, from blocked companies, or previously applied to
-4. **Confirm** - presents a ranked table for one-time approval (or auto-approves if `confirmMode: "auto"` and all scores >= 6)
+4. **Confirm** - presents a ranked table for one-time approval (or auto-approves if `confirmMode: "auto"` and all scores >= `minMatchScore`)
 5. **Apply** - fills and submits every approved application autonomously
 6. **Track** - saves progress to `runs/*.json` after every action for resumability
 
@@ -74,9 +74,12 @@ jobpilot/
     upwork-proposal/    # Upwork proposal generation
     humanizer/          # AI text humanizer (git submodule)
   scripts/
-    applied-jobs.sh     # Returns previously applied jobs from run history
+    check-applied.sh    # Checks if a job URL was already applied to
+    log-applied.sh      # Logs a successful application to the database
     run-stats.sh        # Aggregates stats from all run files
     export-csv.sh       # Exports applications to CSV
+    update-run.sh       # Updates run file fields without full JSON read
+  applied-jobs.json     # Persistent applied-jobs database (gitignored)
   docs/
     images/             # Screenshots for documentation
     configuration.md    # Detailed configuration reference

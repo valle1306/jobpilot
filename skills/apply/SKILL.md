@@ -61,6 +61,16 @@ Before starting the application, analyze the job posting and provide a quick qua
 
 **Note:** If the input is a URL (not pasted content), still perform the qualification review after navigating and reading the job description in Step 1, before clicking Apply.
 
+### Step 0c: Check if Already Applied
+
+Before navigating, check if this job URL has already been applied to:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-applied.sh "<job-url>"
+```
+
+If the script outputs `already-applied`, inform the user: **"You've already applied to this job."** Ask if they want to proceed anyway or stop.
+
 ### Step 1: Navigate and Assess the Page
 
 1. Use `browser_navigate` to open the URL.
@@ -84,6 +94,14 @@ Read and follow the instructions in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/auth.m
 Read and follow the instructions in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/form-filling.md`.
 
 **Before submitting the final form**, take a snapshot and present a summary of all filled fields to the user for review. **Wait for user confirmation before clicking submit.**
+
+### After Successful Submission
+
+Log the application to the persistent applied-jobs database:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/log-applied.sh "<job-url>" "<title>" "<company>" "apply"
+```
 
 ## Important Rules
 

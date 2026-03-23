@@ -53,7 +53,13 @@ The search URL for each board comes from the `searchUrl` field in the board's `j
 
 ### Step 3: Exclude Previously Applied Jobs
 
-Before scoring, run the script `bash ${CLAUDE_PLUGIN_ROOT}/scripts/applied-jobs.sh` to get a JSON array of all previously applied jobs (each with `url`, `title`, `company`, `runId`). Compare each search result against this list by matching on URL (exact match) or company name + job title (fuzzy match). Mark previously applied jobs in the results table with a "Previously Applied" tag so the user knows, and exclude them from the "Apply to #N" action suggestions.
+Before scoring, check each job URL against the persistent applied-jobs database:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-applied.sh "<job-url>"
+```
+
+If the script outputs `already-applied` (exit code 0), mark the job in the results table with a "Previously Applied" tag so the user knows, and exclude it from the "Apply to #N" action suggestions.
 
 ### Step 4: Qualification Fit Review
 
