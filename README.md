@@ -10,6 +10,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that auto
 | ----- | ------- | ------------ |
 | **Autopilot** | `/autopilot <query>` | Search boards, score matches, and apply to jobs autonomously in batch |
 | **Apply** | `/apply <url>` | Auto-fill a single job application form via browser automation |
+| **Batch Apply** | `/apply-batch <file>` | Apply to multiple jobs from a file of URLs with scoring and batch approval |
 | **Search** | `/search <query>` | Search job boards and rank results by qualification fit |
 | **Cover Letter** | `/cover-letter <job_desc>` | Generate a tailored cover letter matched to your experience |
 | **Upwork Proposal** | `/upwork-proposal <job_desc>` | Generate a concise, client-focused Upwork proposal |
@@ -65,6 +66,9 @@ Add to `.claude/settings.json`:
 
 # Apply to a single job
 /apply https://boards.greenhouse.io/company/jobs/12345
+
+# Apply to multiple jobs from a file
+/apply-batch jobs-to-apply.txt
 
 # Search for jobs
 /search "software engineer remote"

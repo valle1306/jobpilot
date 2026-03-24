@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-03-24
+
+### Added
+
+- `apply-batch` skill for applying to multiple jobs from a file of URLs with scoring and batch approval
+- `jobs-to-apply.example.txt` template file for batch apply
+
 ## [1.2.0] - 2026-03-22
 
 ### Added

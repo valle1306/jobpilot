@@ -31,6 +31,10 @@ Special invocations:
 
 Single-job application. Navigates to the job page, performs a qualification fit review, handles login, and fills every form field from your profile and resume. Always asks for confirmation before submitting.
 
+### Batch Apply (`/apply-batch`)
+
+Apply to multiple jobs from a file of URLs. Visits each job page, extracts details, scores against your resume, and presents a batch confirmation table. After approval, applies to every approved job autonomously with full progress tracking. Create a `jobs-to-apply.txt` file with one URL per line (see `jobs-to-apply.example.txt` for the format).
+
 ### Search (`/search`)
 
 Searches enabled job boards, scores results against your resume, and presents a ranked table. Offers next actions: apply, get details, or generate a cover letter for any result.
@@ -66,6 +70,7 @@ jobpilot/
       form-filling.md   # Field mapping, special fields, multi-page forms
       browser-tips.md   # Large page handling, token overflow, popups
     apply/              # Single job application
+    apply-batch/        # Batch apply from a file of URLs
     autopilot/          # Autonomous batch search + apply
     cover-letter/       # Cover letter generation
     dashboard/          # Application tracking stats and export
@@ -80,6 +85,7 @@ jobpilot/
     export-csv.sh       # Exports applications to CSV
     update-run.sh       # Updates run file fields without full JSON read
   applied-jobs.json     # Persistent applied-jobs database (gitignored)
+  jobs-to-apply.example.txt  # Template for batch apply
   docs/
     images/             # Screenshots for documentation
     configuration.md    # Detailed configuration reference
