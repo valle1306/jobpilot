@@ -124,6 +124,7 @@ Current `standalone` config supports:
 - `tailoringProvider`: preferred AI tailoring backend; use `codex-cli` for file-level LaTeX editing through Codex CLI
 - `requireTailoringProvider`: set to `codex-cli`, `openai`, or `ai-agent` to block applications unless that provider succeeds
 - `codexAssistedApply`: when `true`, hard ATS hosts can ask Codex CLI for the next browser actions based on the live page state
+- `manualAutofillAssist`: when `true` and the browser is visible, JobPilot pauses on difficult ATS pages so you can use a browser autofill extension manually before resuming
 - `codexAssistedApplyHosts`: host substrings that should trigger Codex-assisted apply, such as Workday, UKG/UltiPro, ADP, iCIMS, Taleo, Oracle Recruiting, SilkRoad, and Avature tenants
 - `codexAssistedApplyMaxRounds`: how many Codex-assisted planning rounds a single application step can use before falling back to the normal bounded loop
 - `codexAssistedApplyMaxActions`: maximum browser actions Codex can suggest per assistance round
@@ -196,6 +197,7 @@ You can verify the shortcut status any time with:
 - Resume upload handling now includes hidden file inputs, which improves compatibility with ATSes like Lever that wrap the real upload control behind a styled button.
 - Workday flows now try to steer toward guest/manual apply paths before falling back to login-required handling, and `incomplete` failures now include visible validation clues when available.
 - If an ATS forces account creation before applying, standalone mode now keeps that page in the normal form-filling path and uses your configured application password from `credentials.default.password` unless a board-specific credential override exists.
+- If `manualAutofillAssist` is enabled, standalone mode can pause on those difficult ATS pages and let you use a browser autofill extension yourself before JobPilot continues.
 - Unattended runs work best with direct ATS/company URLs. LinkedIn Easy Apply is skipped in unattended mode; LinkedIn is treated as a discovery source unless JobPilot can extract a direct external apply link.
 - Redirector-style hosts such as `jobright.ai`, `appcast`, `remotehunter`, `jobsyn`, and similar non-ATS apply wrappers are now treated as aggregator surfaces and skipped in unattended mode.
 - If an apply host requires login, extra verification, or repeatedly stalls as `incomplete`, standalone autorun now skips the rest of that host for the current run instead of wasting more attempts.

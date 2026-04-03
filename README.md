@@ -107,6 +107,7 @@ The ATS filler now also handles hidden resume upload inputs better, which matter
 Hard ATS hosts such as Workday, UKG/UltiPro, ADP, iCIMS, Taleo, Oracle Recruiting, SilkRoad, and Avature can now fall back to a Codex-assisted apply planner. JobPilot also uses that Codex-assisted path on non-preferred external ATS hosts, which is much closer to the original Claude-driven behavior on tricky forms.
 That Codex-assisted apply mode does not bypass real login walls, CAPTCHA, email verification, or MFA. It helps Playwright choose better guest/manual paths and field actions when the ATS UI is unusually dynamic.
 If an ATS requires account creation before applying, JobPilot now treats that as part of the application flow and fills the password fields from `credentials.default.password` unless you configured a board-specific credential override.
+If you prefer to watch and occasionally trigger your own browser autofill extension, set `standalone.manualAutofillAssist` to `true`. On difficult ATS pages, JobPilot will pause in the visible browser, let you use the extension manually, and then resume.
 Each autorun now writes both a machine-readable run JSON and a human-readable `*.summary.txt` file in `runs`, including applied, failed, skipped, stage-specific totals, and skip buckets such as duplicate, no-direct-apply, and too-old postings.
 Standalone completion summaries now also group outcomes by board/apply host and break down why jobs failed or were skipped, closer to the original Claude `/autopilot` reporting style.
 

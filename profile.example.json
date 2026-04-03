@@ -178,6 +178,7 @@
     "tailoringProvider": "codex-cli",
     "requireTailoringProvider": "codex-cli",
     "codexAssistedApply": true,
+    "manualAutofillAssist": false,
     "codexAssistedApplyHosts": [
       "myworkdayjobs.com",
       "myworkdaysite.com",

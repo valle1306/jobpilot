@@ -634,7 +634,14 @@ async function extractValidationIssues(page) {
   return issues;
 }
 
-function buildCandidateProfileForCodex({ profile, yearsExperience, effectiveResumePath, jobDetails }) {
+function buildCandidateProfileForCodex({
+  profile,
+  yearsExperience,
+  effectiveResumePath,
+  jobDetails,
+  accountEmail = '',
+  accountPassword = ''
+}) {
   return {
     personal: {
       firstName: profile.personal?.firstName || '',
@@ -667,6 +674,10 @@ function buildCandidateProfileForCodex({ profile, yearsExperience, effectiveResu
     autopilot: {
       salaryExpectation: profile.autopilot?.salaryExpectation || '',
       defaultStartDate: profile.autopilot?.defaultStartDate || '2 weeks notice'
+    },
+    applicationCredentials: {
+      email: accountEmail || profile.personal?.email || '',
+      password: accountPassword || ''
     },
     applicationContext: {
       yearsExperience,
@@ -847,9 +858,12 @@ export async function applyToJob({
     const applicationCredentials = getCredentialForUrl(profile, targetUrl);
     const codexAssistConfig = resolveCodexApplyConfig(profile);
     const useCodexAssist = shouldUseCodexApplyAssist(targetUrl, profile);
+    const manualAutofillAssist =
+      profile.standalone?.manualAutofillAssist === true && headless !== true;
     let codexAssistRounds = 0;
     let codexAssistUsed = false;
     const codexAssistSummaries = [];
+    let promptedForManualAutofill = false;
 
     const buildResultMetadata = () => ({
       assistantUsed: codexAssistUsed,
@@ -978,6 +992,19 @@ export async function applyToJob({
     const filledFields = [];
 
     for (let step = 0; step < 6; step += 1) {
+      if (
+        manualAutofillAssist &&
+        !promptedForManualAutofill &&
+        (useCodexAssist || isRegistrationWallUrl(page.url()))
+      ) {
+        promptedForManualAutofill = true;
+        await promptForManualStep(
+          'If you want to use a browser autofill extension on this ATS page, do it now in the visible browser. Press Enter when the extension has finished and JobPilot should continue.',
+          { allowPrompt: allowManualPrompt }
+        );
+        await page.waitForTimeout(1200);
+      }
+
       const stepChallenge = await detectHumanChallenge(page);
       if (stepChallenge) {
         try {
@@ -1046,7 +1073,9 @@ export async function applyToJob({
               profile,
               yearsExperience,
               effectiveResumePath,
-              jobDetails
+              jobDetails,
+              accountEmail: applicationCredentials?.email || profile.personal.email,
+              accountPassword: applicationCredentials?.password || ''
             }),
             round: codexAssistRounds + 1
           });
