@@ -22,7 +22,13 @@ import {
   fetchJobDetailsFromUrl
 } from './lib/search.mjs';
 import { tailorJob } from './lib/tailor.mjs';
-import { prompt, truncate, uniqueBy } from './lib/utils.mjs';
+import {
+  canonicalizeJobUrl,
+  normalizeWhitespace,
+  prompt,
+  truncate,
+  uniqueBy
+} from './lib/utils.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -449,7 +455,11 @@ function mergeSearchResults(jobs) {
   const byUrl = new Map();
 
   for (const job of jobs) {
-    const key = job.url || `${job.board}|${job.title}|${job.company}`;
+    const canonicalPrimaryUrl = canonicalizeJobUrl(job.applyUrl || job.url);
+    const canonicalSourceUrl = canonicalizeJobUrl(job.sourceUrl || job.url);
+    const companyKey = normalizeWhitespace(job.company || 'unknown').toLowerCase();
+    const titleKey = normalizeWhitespace(job.title || job.url).toLowerCase();
+    const key = canonicalPrimaryUrl || canonicalSourceUrl || `${companyKey}::${titleKey}`;
     const existing = byUrl.get(key);
     if (!existing) {
       byUrl.set(key, {
@@ -484,7 +494,8 @@ async function searchAcrossQueries({
   profile,
   queries,
   limit,
-  resumeText
+  resumeText,
+  allowManualPrompt = true
 }) {
   const aggregated = [];
 
@@ -495,8 +506,21 @@ async function searchAcrossQueries({
       profile,
       query,
       limit,
-      resumeText
+      resumeText,
+      allowManualPrompt,
+      onProgress: (event) => {
+        if (event.type === 'board-complete') {
+          console.log(`  ${event.board}: ${event.count} hydrated jobs`);
+        } else if (event.type === 'board-error') {
+          console.log(`  ${event.board}: skipped (${event.error})`);
+        }
+      }
     });
+
+    const directApplyCount = jobs.filter((job) => job.applyUrl && job.applyUrl !== job.url).length;
+    console.log(
+      `  Query summary: ${jobs.length} candidates after board dedupe, ${directApplyCount} with direct apply links`
+    );
 
     aggregated.push(
       ...jobs.map((job) => ({
@@ -512,6 +536,11 @@ async function searchAcrossQueries({
 async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   const { text: resumeText } = await readResumeText(profile);
   const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
+  const allowManualPrompt = !(
+    Boolean(flags.headless) &&
+    Boolean(flags.submit) &&
+    Boolean(flags.yes)
+  );
   const maxApplicationsConfig = resolveMaxApplications(
     flags.limit ??
       standaloneConfig.maxApplicationsPerRun ??
@@ -534,7 +563,8 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     minMatchScore,
     maxApplications: maxApplicationsConfig.unlimited ? 'all' : maxApplications,
     queries,
-    searchLimitPerQuery: perQueryLimit
+    searchLimitPerQuery: perQueryLimit,
+    allowManualPrompt
   });
 
   try {
@@ -550,7 +580,8 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
           profile,
           queries,
           limit: perQueryLimit,
-          resumeText
+          resumeText,
+          allowManualPrompt
         });
 
     run.jobs = applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore);
@@ -568,6 +599,13 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
       await saveRun(runPath, run);
       return;
     }
+
+    const directApplyCount = approvedCandidates.filter(
+      (job) => job.applyUrl && job.applyUrl !== job.url
+    ).length;
+    console.log(
+      `Qualified ${approvedCandidates.length} jobs for apply. ${directApplyCount} will use direct company application URLs.`
+    );
 
     let approvedIds = approvedCandidates.map((job) => job.id);
     if (!flags.yes) {
@@ -598,26 +636,43 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
 
     await saveRun(runPath, run);
 
-    for (const job of run.jobs.filter((entry) => entry.status === 'approved')) {
+    const approvedJobs = run.jobs.filter((entry) => entry.status === 'approved');
+    for (const [index, job] of approvedJobs.entries()) {
+      console.log(
+        `Applying ${index + 1}/${approvedJobs.length}: ${truncate(job.title, 56)} at ${truncate(job.company, 32)}`
+      );
+      if (job.applyUrl && job.applyUrl !== job.url) {
+        console.log(`  Direct apply URL: ${job.applyUrl}`);
+      } else {
+        console.log(`  Source URL: ${job.url}`);
+      }
+
       job.status = 'applying';
       await saveRun(runPath, run);
 
       let tailoredResumePath = '';
       if (profile.overleaf?.tailorResume) {
         try {
+          console.log('  Tailoring resume...');
           const tailored = await tailorJob({
             profile,
             job,
             headless: Boolean(flags.headless),
             downloadPdf: true,
-            context
+            context,
+            allowManualPrompt
           });
           tailoredResumePath = tailored.tailoredResumePath;
+          console.log(
+            `  Tailor complete: ${tailored.roleType}, ${tailored.addedKeywords.length} keyword updates`
+          );
         } catch (error) {
           job.tailorWarning = error.message;
+          console.log(`  Tailor warning: ${error.message}`);
         }
       }
 
+      console.log('  Filling application...');
       const result = await applyToJob({
         profile,
         url: job.url,
@@ -628,19 +683,23 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
         tailoredResumePath,
         context,
         resumeText,
-        resumePathOverride: flags.resume ? resolveRepoPath(flags.resume) : ''
+        resumePathOverride: flags.resume ? resolveRepoPath(flags.resume) : '',
+        allowManualPrompt
       });
 
       job.result = result.status;
       if (result.status === 'applied' || result.status === 'submitted-unknown') {
         job.status = 'applied';
         job.appliedAt = new Date().toISOString();
+        console.log(`  Result: ${result.status}`);
       } else if (result.status === 'cancelled') {
         job.status = 'skipped';
         job.skipReason = 'Cancelled during apply';
+        console.log('  Result: cancelled');
       } else {
         job.status = 'failed';
-        job.failReason = result.status;
+        job.failReason = result.failReason || result.status;
+        console.log(`  Result: failed (${job.failReason})`);
       }
 
       await saveRun(runPath, run);

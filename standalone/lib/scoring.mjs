@@ -1,4 +1,4 @@
-import { normalizeWhitespace, uniqueBy } from './utils.mjs';
+import { canonicalizeJobUrl, normalizeWhitespace, uniqueBy } from './utils.mjs';
 
 const stopwords = new Set([
   'the',
@@ -121,7 +121,10 @@ export function dedupeJobs(jobs) {
   const seen = new Map();
 
   for (const job of jobs) {
-    const key = `${normalizeWhitespace(job.company || 'unknown').toLowerCase()}::${normalizeWhitespace(job.title || job.url).toLowerCase()}`;
+    const canonicalUrl = canonicalizeJobUrl(job.applyUrl || job.url);
+    const companyKey = normalizeWhitespace(job.company || 'unknown').toLowerCase();
+    const titleKey = normalizeWhitespace(job.title || job.url).toLowerCase();
+    const key = canonicalUrl || `${companyKey}::${titleKey}`;
     const existing = seen.get(key);
     if (!existing) {
       seen.set(key, job);

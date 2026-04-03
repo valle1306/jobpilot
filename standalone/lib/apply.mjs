@@ -388,14 +388,16 @@ export async function applyToJob({
   tailoredResumePath = '',
   context = null,
   resumeText = '',
-  resumePathOverride = ''
+  resumePathOverride = '',
+  allowManualPrompt = true
 }) {
   const ownsContext = !context;
   const browserContext = context ?? (await launchBrowserContext({ headless }));
 
   try {
     const page = await browserContext.newPage();
-    await gotoAndSettle(page, url);
+    const targetUrl = job.applyUrl || url;
+    await gotoAndSettle(page, targetUrl);
 
     let jobDetails = {
       title: job.title || '',
@@ -405,14 +407,43 @@ export async function applyToJob({
 
     const challenge = await detectHumanChallenge(page);
     if (challenge) {
-      await promptForManualStep(
-        `The site presented a ${challenge}. Complete it manually in the browser before continuing.`
-      );
+      try {
+        await promptForManualStep(
+          `The site presented a ${challenge}. Complete it manually in the browser before continuing.`,
+          { allowPrompt: allowManualPrompt }
+        );
+      } catch (error) {
+        return {
+          status: 'manual-step-required',
+          job: jobDetails,
+          filledFields: [],
+          resumePath: '',
+          failReason: error.message
+        };
+      }
     }
 
     if (await detectLoginPage(page)) {
-      await attemptLogin(page, getCredentialForUrl(profile, page.url()));
+      const loggedIn = await attemptLogin(page, getCredentialForUrl(profile, page.url()));
       await page.waitForTimeout(2000);
+      if (await detectLoginPage(page)) {
+        if (!allowManualPrompt) {
+          return {
+            status: loggedIn ? 'verification-required' : 'login-required',
+            job: jobDetails,
+            filledFields: [],
+            resumePath: '',
+            failReason: loggedIn
+              ? 'Additional verification is required before applying.'
+              : 'Login is required before applying.'
+          };
+        }
+
+        await promptForManualStep(
+          'Login is still required before the application can continue.',
+          { allowPrompt: allowManualPrompt }
+        );
+      }
     }
 
     await ensureApplicationForm(page);
@@ -453,9 +484,20 @@ export async function applyToJob({
     for (let step = 0; step < 6; step += 1) {
       const stepChallenge = await detectHumanChallenge(page);
       if (stepChallenge) {
-        await promptForManualStep(
-          `The application presented a ${stepChallenge}. Complete it manually in the browser before continuing.`
-        );
+        try {
+          await promptForManualStep(
+            `The application presented a ${stepChallenge}. Complete it manually in the browser before continuing.`,
+            { allowPrompt: allowManualPrompt }
+          );
+        } catch (error) {
+          return {
+            status: 'manual-step-required',
+            job: jobDetails,
+            filledFields,
+            resumePath: effectiveResumePath,
+            failReason: error.message
+          };
+        }
       }
 
       const fields = await scanFields(page);
@@ -516,7 +558,7 @@ export async function applyToJob({
         const success = await detectSuccess(page);
         if (success) {
           await logAppliedJob({
-            url,
+            url: targetUrl,
             title: jobDetails.title || 'Unknown title',
             company: jobDetails.company || 'Unknown company',
             source: 'standalone-apply'

@@ -35,7 +35,12 @@ export async function gotoAndSettle(page, url) {
   await page.waitForTimeout(2500);
 }
 
-export async function promptForManualStep(message) {
+export async function promptForManualStep(message, options = {}) {
+  const { allowPrompt = true } = options;
+  if (!allowPrompt) {
+    throw new Error(message);
+  }
+
   await prompt(`${message}\nPress Enter once you're ready to continue.`);
 }
 

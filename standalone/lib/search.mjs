@@ -7,7 +7,13 @@ import {
   promptForManualStep
 } from './browser.mjs';
 import { dedupeJobs, scoreJob } from './scoring.mjs';
-import { normalizeWhitespace, truncate } from './utils.mjs';
+import {
+  canonicalizeJobUrl,
+  extractExternalJobUrl,
+  isAggregatorUrl,
+  normalizeWhitespace,
+  truncate
+} from './utils.mjs';
 import { wasAlreadyApplied } from './runs.mjs';
 
 function buildSearchUrl(board, parsed) {
@@ -120,10 +126,11 @@ async function hydrateJob(page, candidate, board) {
   await gotoAndSettle(page, candidate.url);
 
   const details = await page.evaluate(() => {
+    const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
     const pickText = (selectors) => {
       for (const selector of selectors) {
         const element = document.querySelector(selector);
-        const value = (element?.innerText || element?.textContent || '').replace(/\s+/g, ' ').trim();
+        const value = normalize(element?.innerText || element?.textContent || '');
         if (value) {
           return value;
         }
@@ -131,12 +138,93 @@ async function hydrateJob(page, candidate, board) {
       return '';
     };
 
+    const decodeRedirect = (href) => {
+      if (!href) {
+        return '';
+      }
+
+      try {
+        const url = new URL(href, window.location.href);
+        const keys = [
+          'url',
+          'dest',
+          'destination',
+          'destinationUrl',
+          'redirect',
+          'redirectUrl',
+          'redirect_uri',
+          'target',
+          'targetUrl',
+          'applicationUrl',
+          'externalJobUrl'
+        ];
+
+        for (const key of keys) {
+          const candidate = url.searchParams.get(key);
+          if (!candidate) {
+            continue;
+          }
+          try {
+            const decoded = decodeURIComponent(candidate);
+            if (/^https?:\/\//i.test(decoded)) {
+              return decoded;
+            }
+          } catch {
+            if (/^https?:\/\//i.test(candidate)) {
+              return candidate;
+            }
+          }
+        }
+
+        return url.toString();
+      } catch {
+        return href;
+      }
+    };
+
     const bodyCandidates = [
       ...document.querySelectorAll('main, article, [role="main"], .jobs-description, .jobsearch-JobComponent')
     ];
     const bodyText = bodyCandidates
-      .map((element) => (element.innerText || '').replace(/\s+/g, ' ').trim())
+      .map((element) => normalize(element.innerText || ''))
       .sort((a, b) => b.length - a.length)[0] ?? document.body.innerText;
+
+    const currentHost = window.location.hostname.replace(/^www\./, '');
+    const applyCandidates = [...document.querySelectorAll('a[href], button, [role="button"]')]
+      .map((element) => {
+        const text = normalize(
+          element.innerText ||
+            element.textContent ||
+            element.getAttribute('aria-label') ||
+            element.getAttribute('title') ||
+            ''
+        );
+        const hrefAttr = element.getAttribute('href') || '';
+        const href = hrefAttr ? decodeRedirect(hrefAttr) : '';
+        return { text, href };
+      })
+      .filter(
+        (candidate) =>
+          candidate.href &&
+          /apply|easy apply|quick apply|submit application|external apply/i.test(candidate.text)
+      );
+
+    const externalApply = applyCandidates.find((candidate) => {
+      try {
+        const url = new URL(candidate.href);
+        const host = url.hostname.replace(/^www\./, '');
+        return (
+          host !== currentHost &&
+          !host.includes('linkedin.com') &&
+          !host.includes('indeed.com') &&
+          !host.includes('glassdoor.com') &&
+          !host.includes('hiring.cafe')
+        );
+      } catch {
+        return false;
+      }
+    });
+    const internalApply = applyCandidates.find((candidate) => candidate.href);
 
     return {
       pageTitle: document.title,
@@ -163,16 +251,32 @@ async function hydrateJob(page, candidate, board) {
           '.jobsearch-JobInfoHeader-subtitle div',
           '.location'
         ]) || '',
-      description: bodyText || ''
+      description: bodyText || '',
+      applyUrl: externalApply?.href || internalApply?.href || '',
+      applySurface: externalApply ? 'external' : internalApply ? 'internal' : 'none'
     };
   });
 
+  const canonicalSourceUrl = canonicalizeJobUrl(candidate.url);
+  const resolvedApplyUrl = details.applyUrl
+    ? extractExternalJobUrl(details.applyUrl)
+    : '';
+
   return {
     ...candidate,
+    url: canonicalSourceUrl || candidate.url,
+    sourceUrl: candidate.url,
     title: details.title || candidate.title,
     company: details.company || board.name,
     location: details.location,
     description: details.description,
+    applyUrl: resolvedApplyUrl || '',
+    applySurface:
+      details.applySurface === 'external'
+        ? 'direct'
+        : isAggregatorUrl(candidate.url)
+          ? 'aggregator'
+          : details.applySurface,
     board: board.name,
     boardDomain: board.domain
   };
@@ -200,7 +304,9 @@ export async function searchJobs({
   query,
   limit = 12,
   hydrateLimit = 8,
-  resumeText
+  resumeText,
+  allowManualPrompt = true,
+  onProgress = null
 }) {
   const parsed = parseSearchQuery(query);
   const boards = getEnabledSearchBoards(profile);
@@ -209,6 +315,7 @@ export async function searchJobs({
   for (const board of boards) {
     const page = await context.newPage();
     try {
+      onProgress?.({ type: 'board-start', board: board.name, query });
       const searchUrl = buildSearchUrl(board, parsed);
       await gotoAndSettle(page, searchUrl);
 
@@ -219,7 +326,8 @@ export async function searchJobs({
       const challenge = await detectHumanChallenge(page);
       if (challenge) {
         await promptForManualStep(
-          `${board.name} presented a ${challenge}. Solve it in the browser to continue searching.`
+          `${board.name} presented a ${challenge}. Solve it in the browser to continue searching.`,
+          { allowPrompt: allowManualPrompt }
         );
       }
 
@@ -258,6 +366,19 @@ export async function searchJobs({
       }
 
       aggregated.push(...hydrated);
+      onProgress?.({
+        type: 'board-complete',
+        board: board.name,
+        query,
+        count: hydrated.length
+      });
+    } catch (error) {
+      onProgress?.({
+        type: 'board-error',
+        board: board.name,
+        query,
+        error: error.message
+      });
     } finally {
       await page.close().catch(() => {});
     }
@@ -267,7 +388,9 @@ export async function searchJobs({
   const filtered = [];
 
   for (const job of deduped) {
-    const alreadyApplied = await wasAlreadyApplied(job.url);
+    const alreadyApplied =
+      (job.applyUrl && (await wasAlreadyApplied(job.applyUrl))) ||
+      (await wasAlreadyApplied(job.url));
     filtered.push({
       ...job,
       status: alreadyApplied ? 'skipped' : 'pending',

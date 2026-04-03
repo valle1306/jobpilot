@@ -97,7 +97,8 @@ async function maybeDownloadOverleafPdf({
   profile,
   outputPath,
   headless = false,
-  existingContext = null
+  existingContext = null,
+  allowManualPrompt = true
 }) {
   const ownsContext = !existingContext;
   const context = existingContext ?? (await launchBrowserContext({ headless }));
@@ -117,9 +118,20 @@ async function maybeDownloadOverleafPdf({
 
       if (credentials) {
         await attemptLogin(page, credentials);
+        if (await detectLoginPage(page)) {
+          if (!allowManualPrompt) {
+            throw new Error('Overleaf website login requires manual verification.');
+          }
+
+          await promptForManualStep(
+            'Overleaf still needs manual verification before PDF download can continue.',
+            { allowPrompt: allowManualPrompt }
+          );
+        }
       } else {
         await promptForManualStep(
-          'Overleaf requires website login before PDF download. Sign in manually in the opened browser.'
+          'Overleaf requires website login before PDF download. Sign in manually in the opened browser.',
+          { allowPrompt: allowManualPrompt }
         );
       }
     }
@@ -147,7 +159,8 @@ export async function ensureUploadResumePath({
   roleType = 'general-ds',
   tailoredResumePath = '',
   headless = false,
-  context = null
+  context = null,
+  allowManualPrompt = true
 }) {
   if (tailoredResumePath && (await fileExists(resolveRepoPath(tailoredResumePath)))) {
     return resolveRepoPath(tailoredResumePath);
@@ -177,7 +190,8 @@ export async function ensureUploadResumePath({
     profile,
     outputPath,
     headless,
-    existingContext: context
+    existingContext: context,
+    allowManualPrompt
   });
 }
 
@@ -186,7 +200,8 @@ export async function tailorJob({
   job,
   headless = false,
   downloadPdf = true,
-  context = null
+  context = null,
+  allowManualPrompt = true
 }) {
   const roleType = classifyRoleType(job.title, job.description);
   const clonePath = resolveRepoPath(profile.overleaf.localClonePath);
@@ -236,7 +251,8 @@ export async function tailorJob({
       profile,
       outputPath,
       headless,
-      existingContext: context
+      existingContext: context,
+      allowManualPrompt
     });
   }
 

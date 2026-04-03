@@ -38,6 +38,122 @@ export async function writeText(filePath, value) {
   await fs.writeFile(filePath, value, 'utf8');
 }
 
+function decodeUrlCandidate(value) {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    const decoded = decodeURIComponent(value);
+    if (/^https?:\/\//i.test(decoded)) {
+      return decoded;
+    }
+  } catch {
+    // Fall back to the raw value below.
+  }
+
+  return /^https?:\/\//i.test(value) ? value : '';
+}
+
+export function extractExternalJobUrl(rawUrl) {
+  if (!rawUrl) {
+    return '';
+  }
+
+  try {
+    const url = new URL(String(rawUrl).trim());
+    const candidateKeys = [
+      'url',
+      'dest',
+      'destination',
+      'destinationUrl',
+      'redirect',
+      'redirectUrl',
+      'redirect_uri',
+      'target',
+      'targetUrl',
+      'applicationUrl',
+      'externalJobUrl'
+    ];
+
+    for (const key of candidateKeys) {
+      const candidate = decodeUrlCandidate(url.searchParams.get(key));
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    return url.toString();
+  } catch {
+    return String(rawUrl).trim();
+  }
+}
+
+export function canonicalizeJobUrl(rawUrl) {
+  if (!rawUrl) {
+    return '';
+  }
+
+  const resolvedExternalUrl = extractExternalJobUrl(rawUrl);
+
+  try {
+    const url = new URL(resolvedExternalUrl);
+    const hostname = url.hostname.toLowerCase();
+
+    if (hostname.includes('linkedin.com') && url.pathname.includes('/jobs/view')) {
+      return `${url.origin}${url.pathname}`;
+    }
+
+    if (hostname.includes('indeed.com') && url.pathname.includes('/viewjob')) {
+      const jk = url.searchParams.get('jk');
+      return jk ? `${url.origin}${url.pathname}?jk=${jk}` : `${url.origin}${url.pathname}`;
+    }
+
+    const trackingParams = [
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'utm_term',
+      'utm_content',
+      'ref',
+      'refId',
+      'trackingId',
+      'trk',
+      'gh_src',
+      'gh_jid'
+    ];
+
+    for (const key of trackingParams) {
+      url.searchParams.delete(key);
+    }
+
+    url.hash = '';
+    const query = url.searchParams.toString();
+    return query ? `${url.origin}${url.pathname}?${query}` : `${url.origin}${url.pathname}`;
+  } catch {
+    return String(resolvedExternalUrl).trim();
+  }
+}
+
+export function isAggregatorUrl(rawUrl) {
+  if (!rawUrl) {
+    return false;
+  }
+
+  try {
+    const url = new URL(String(rawUrl).trim());
+    const hostname = url.hostname.toLowerCase();
+    return (
+      hostname.includes('linkedin.com') ||
+      hostname.includes('indeed.com') ||
+      hostname.includes('glassdoor.com') ||
+      hostname.includes('hiring.cafe')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function slugify(value) {
   return String(value ?? '')
     .toLowerCase()
