@@ -7,3 +7,5 @@ node_modules/
 runs/
 applied-jobs.json
 snapshot-*.md
+overleaf-resume/
+resumes/tailored/
