@@ -20,7 +20,7 @@
     "visaStatus": "OPT",
     "optExtension": "STEM OPT",
     "willingToRelocate": true,
-    "preferredLocations": ["Portland, ME", "Boston, MA", "Remote"]
+    "preferredLocations": ["New York, NY", "Remote"]
   },
   "eeo": {
     "gender": "Prefer not to disclose",
@@ -32,10 +32,10 @@
   },
   "address": {
     "street": "123 Main St",
-    "aptUnit": "Apt 4B",
-    "city": "Portland",
-    "state": "ME",
-    "zipCode": "04101",
+    "aptUnit": "Apt 1",
+    "city": "New York",
+    "state": "NY",
+    "zipCode": "10001",
     "country": "United States"
   },
   "credentials": {
