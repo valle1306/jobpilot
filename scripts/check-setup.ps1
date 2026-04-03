@@ -92,6 +92,30 @@ function Check-Field {
   return $value
 }
 
+function Get-LocalEnvValue {
+  param(
+    [string]$EnvPath,
+    [string]$Name
+  )
+
+  if (-not (Test-Path -LiteralPath $EnvPath)) {
+    return $null
+  }
+
+  $pattern = "^\s*$([regex]::Escape($Name))\s*=\s*(.*)\s*$"
+  foreach ($line in Get-Content -LiteralPath $EnvPath) {
+    if ($line -match $pattern) {
+      $value = $matches[1].Trim()
+      if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+        $value = $value.Substring(1, $value.Length - 2)
+      }
+      return $value
+    }
+  }
+
+  return $null
+}
+
 if (-not (Test-Path $profilePath)) {
   Add-Result "ERROR" "profile.json" "Create profile.json from profile.example.json before running setup checks."
   $results | ForEach-Object { "{0}`t{1}`t{2}" -f $_.Level, $_.Name, $_.Message }
@@ -215,6 +239,38 @@ if ($defaultResume) {
   } else {
     Add-Result "ERROR" "resume" "Default resume path does not exist: $defaultResume"
   }
+}
+
+$openAIEnabled = [bool](Get-Value -Root $profile -Path @("openai", "enabled"))
+if ($openAIEnabled) {
+  $apiKeyEnvVar = Get-Value -Root $profile -Path @("openai", "apiKeyEnvVar")
+  if ([string]::IsNullOrWhiteSpace([string]$apiKeyEnvVar)) {
+    $apiKeyEnvVar = "OPENAI_API_KEY"
+  }
+
+  $openAIModel = Get-Value -Root $profile -Path @("openai", "model")
+  if ([string]::IsNullOrWhiteSpace([string]$openAIModel)) {
+    $openAIModel = "gpt-5.4-mini"
+  }
+
+  $envPath = Join-Path $repoRoot ".env"
+  $apiKeyValue = [Environment]::GetEnvironmentVariable([string]$apiKeyEnvVar, "Process")
+  if ([string]::IsNullOrWhiteSpace($apiKeyValue)) {
+    $apiKeyValue = [Environment]::GetEnvironmentVariable([string]$apiKeyEnvVar, "User")
+  }
+  if ([string]::IsNullOrWhiteSpace($apiKeyValue)) {
+    $apiKeyValue = Get-LocalEnvValue -EnvPath $envPath -Name ([string]$apiKeyEnvVar)
+  }
+
+  if ([string]::IsNullOrWhiteSpace($apiKeyValue)) {
+    Add-Result "WARN" "openai.apiKey" "OpenAI tailoring is enabled but $apiKeyEnvVar is not set. Add it to your environment or .env."
+  } else {
+    Add-Result "OK" "openai.apiKey" "OpenAI API key was found via $apiKeyEnvVar."
+  }
+
+  Add-Result "OK" "openai.model" "OpenAI tailoring model is set to $openAIModel."
+} elseif ($null -ne (Get-Value -Root $profile -Path @("openai"))) {
+  Add-Result "WARN" "openai.enabled" "OpenAI tailoring is configured but disabled."
 }
 
 $overleafEnabled = [bool](Get-Value -Root $profile -Path @("overleaf", "enabled"))

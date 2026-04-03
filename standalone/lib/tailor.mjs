@@ -6,10 +6,12 @@ import {
   classifyRoleType,
   preferredResumePath,
   repoRoot,
+  resolveOpenAIConfig,
   resolveRepoPath
 } from './config.mjs';
 import { dateSlug, ensureDir, fileExists, nowIso, slugify, sleep, truncate, writeText } from './utils.mjs';
 import { gotoAndSettle, launchBrowserContext, promptForManualStep, detectLoginPage, attemptLogin } from './browser.mjs';
+import { tailorResumeWithOpenAI } from './openai-tailor.mjs';
 import { topKeywords } from './scoring.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -214,8 +216,43 @@ export async function tailorJob({
   const texPath = path.join(clonePath, texFile);
   const mainTexPath = path.join(clonePath, 'main.tex');
   const originalTex = await fs.readFile(texPath, 'utf8');
-  const keywords = extractTailorKeywords(`${job.title}\n${job.description}`, originalTex);
-  const { texContent, addedKeywords } = applySafeTailoring(originalTex, keywords);
+  const openAIConfig = resolveOpenAIConfig(profile);
+
+  let texContent = originalTex;
+  let addedKeywords = [];
+  let tailoringMethod = 'heuristic';
+  let modelUsed = '';
+  let tailoringSummary = '';
+  let acceptedEdits = [];
+  let tailoringWarning = '';
+
+  if (openAIConfig.enabled) {
+    try {
+      const tailoredByModel = await tailorResumeWithOpenAI({
+        profile,
+        job,
+        texContent: originalTex,
+        roleType,
+        texFile
+      });
+
+      texContent = tailoredByModel.texContent;
+      addedKeywords = tailoredByModel.addedKeywords;
+      tailoringMethod = tailoredByModel.method;
+      modelUsed = tailoredByModel.model;
+      tailoringSummary = tailoredByModel.summary;
+      acceptedEdits = tailoredByModel.acceptedEdits;
+    } catch (error) {
+      tailoringWarning = error.message;
+    }
+  }
+
+  if (tailoringMethod !== 'openai') {
+    const keywords = extractTailorKeywords(`${job.title}\n${job.description}`, originalTex);
+    const heuristicResult = applySafeTailoring(originalTex, keywords);
+    texContent = heuristicResult.texContent;
+    addedKeywords = heuristicResult.addedKeywords;
+  }
 
   await writeText(texPath, texContent);
   await writeText(mainTexPath, texContent);
@@ -261,6 +298,11 @@ export async function tailorJob({
     texFile,
     addedKeywords,
     tag,
-    tailoredResumePath
+    tailoredResumePath,
+    tailoringMethod,
+    modelUsed,
+    tailoringSummary,
+    tailoringWarning,
+    acceptedEdits
   };
 }

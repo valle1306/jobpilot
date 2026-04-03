@@ -173,7 +173,16 @@ async function commandTailor(input, flags) {
     console.log(`\nTailored ${job.title} at ${job.company}`);
     console.log(`Role type: ${result.roleType}`);
     console.log(`Template: ${result.texFile}`);
+    console.log(
+      `Tailoring method: ${result.tailoringMethod}${result.modelUsed ? ` (${result.modelUsed})` : ''}`
+    );
     console.log(`Added keywords: ${result.addedKeywords.join(', ') || 'none'}`);
+    if (result.tailoringSummary) {
+      console.log(`Tailoring summary: ${result.tailoringSummary}`);
+    }
+    if (result.tailoringWarning) {
+      console.log(`Tailoring warning: ${result.tailoringWarning}`);
+    }
     console.log(`Tag: ${result.tag}`);
     if (result.tailoredResumePath) {
       console.log(`PDF: ${result.tailoredResumePath}`);
@@ -664,8 +673,11 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
           });
           tailoredResumePath = tailored.tailoredResumePath;
           console.log(
-            `  Tailor complete: ${tailored.roleType}, ${tailored.addedKeywords.length} keyword updates`
+            `  Tailor complete: ${tailored.roleType}, ${tailored.addedKeywords.length} keyword updates, ${tailored.tailoringMethod}${tailored.modelUsed ? ` (${tailored.modelUsed})` : ''}`
           );
+          if (tailored.tailoringWarning) {
+            console.log(`  Tailor warning: ${tailored.tailoringWarning}`);
+          }
         } catch (error) {
           job.tailorWarning = error.message;
           console.log(`  Tailor warning: ${error.message}`);

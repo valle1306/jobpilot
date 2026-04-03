@@ -44,6 +44,16 @@
       "password": "your-password-here"
     }
   },
+  "openai": {
+    "enabled": false,
+    "apiKeyEnvVar": "OPENAI_API_KEY",
+    "model": "gpt-5.4-mini",
+    "reasoningEffort": "medium",
+    "maxBulletEdits": 4,
+    "maxBulletsPerEntry": 2,
+    "maxExtraCharsPerBullet": 36,
+    "maxTotalAddedChars": 120
+  },
   "jobBoards": [
     {
       "name": "LinkedIn",

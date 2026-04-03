@@ -75,6 +75,8 @@ To run the standalone unattended workflow:
 .\scripts\jobpilot-autorun.ps1
 ```
 
+To enable OpenAI-powered JD-aware resume tailoring in the standalone flow, set `OPENAI_API_KEY` in your environment or `.env`, then enable the `openai` block in `profile.json`.
+
 To create a Desktop shortcut for the unattended workflow:
 
 ```powershell

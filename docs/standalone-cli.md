@@ -11,6 +11,16 @@ This repo now includes a standalone JobPilot CLI that does not depend on Claude 
 .\scripts\standalone-install.ps1
 ```
 
+Optional for OpenAI-powered resume tailoring:
+
+1. Create `.env` from [.env.example](c:\Users\lpnhu\Downloads\jobpilot\.env.example), or set a permanent user environment variable:
+
+```powershell
+[Environment]::SetEnvironmentVariable("OPENAI_API_KEY", "your-openai-api-key", "User")
+```
+
+2. Enable the `openai` block in `profile.json`.
+
 ## Commands
 
 Use the PowerShell wrapper:
@@ -94,6 +104,16 @@ Current `standalone` config supports:
 - `resumePath`: optional direct resume override
 - `logDir`: where autorun logs go
 
+Current `openai` config supports:
+
+- `enabled`: turn on OpenAI-backed resume tailoring before Overleaf compile
+- `apiKeyEnvVar`: environment variable name for the API key, usually `OPENAI_API_KEY`
+- `model`: OpenAI model ID, default `gpt-5.4-mini`
+- `maxBulletEdits`: maximum LaTeX bullet rewrites per tailored resume
+- `maxBulletsPerEntry`: cap edits per role/project entry
+- `maxExtraCharsPerBullet`: one-page guardrail for line growth
+- `maxTotalAddedChars`: one-page guardrail across the whole tailored resume
+
 ### Desktop Shortcut
 
 To install a desktop shortcut that launches the unattended workflow:
@@ -115,6 +135,6 @@ You can verify the shortcut status any time with:
 ## Current Scope
 
 - Search is best-effort and still needs adapter tuning per board.
-- Tailoring in standalone mode is intentionally conservative: it selects the role-mapped resume template and safely enriches skills lines instead of rewriting experience bullets with an LLM.
+- Tailoring in standalone mode can now use OpenAI for JD-aware bullet rewrites, but it still validates edits aggressively and falls back to the conservative path if an edit looks unsafe.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
 - If you do not store `overleaf.webPassword`, Overleaf PDF download will pause for manual browser login.

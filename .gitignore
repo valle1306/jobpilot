@@ -1,4 +1,5 @@
 profile.json
+.env
 node_modules/
 .playwright-mcp/
 .playwright-standalone/

@@ -5,6 +5,52 @@ import { ensureDir, normalizeWhitespace } from './utils.mjs';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(currentDir, '..', '..');
+let repoEnvLoaded = false;
+
+function parseEnvLine(line) {
+  const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+  if (!match) {
+    return null;
+  }
+
+  let [, key, value] = match;
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    value = value.slice(1, -1);
+  }
+
+  return { key, value };
+}
+
+export async function loadRepoEnv() {
+  if (repoEnvLoaded) {
+    return;
+  }
+
+  const envPath = path.join(repoRoot, '.env');
+  try {
+    const raw = await fs.readFile(envPath, 'utf8');
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line || /^\s*#/.test(line)) {
+        continue;
+      }
+
+      const parsed = parseEnvLine(line);
+      if (!parsed) {
+        continue;
+      }
+
+      if (!(parsed.key in process.env)) {
+        process.env[parsed.key] = parsed.value;
+      }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  repoEnvLoaded = true;
+}
 
 export function resolveRepoPath(pathValue) {
   if (!pathValue) {
@@ -19,6 +65,7 @@ export function resolveRepoPath(pathValue) {
 }
 
 export async function loadProfile() {
+  await loadRepoEnv();
   const profilePath = path.join(repoRoot, 'profile.json');
   const raw = await fs.readFile(profilePath, 'utf8');
   const profile = JSON.parse(raw);
@@ -127,6 +174,29 @@ export function preferredResumePath(profile, roleType, tailoredResumePath = '') 
     profile.personal?.resumes?.default;
 
   return resolveRepoPath(candidate);
+}
+
+export function resolveOpenAIConfig(profile = {}) {
+  const openai = profile.openai ?? {};
+  const apiKeyEnvVar = String(openai.apiKeyEnvVar ?? 'OPENAI_API_KEY').trim() || 'OPENAI_API_KEY';
+  const model = String(openai.model ?? 'gpt-5.4-mini').trim() || 'gpt-5.4-mini';
+  const reasoningEffort = String(openai.reasoningEffort ?? 'medium').trim() || 'medium';
+  const maxBulletEdits = Math.max(1, Number(openai.maxBulletEdits ?? 4) || 4);
+  const maxBulletsPerEntry = Math.max(1, Number(openai.maxBulletsPerEntry ?? 2) || 2);
+  const maxExtraCharsPerBullet = Math.max(10, Number(openai.maxExtraCharsPerBullet ?? 36) || 36);
+  const maxTotalAddedChars = Math.max(20, Number(openai.maxTotalAddedChars ?? 120) || 120);
+
+  return {
+    enabled: openai.enabled === true,
+    apiKeyEnvVar,
+    apiKey: process.env[apiKeyEnvVar] ?? '',
+    model,
+    reasoningEffort,
+    maxBulletEdits,
+    maxBulletsPerEntry,
+    maxExtraCharsPerBullet,
+    maxTotalAddedChars
+  };
 }
 
 export async function ensureWorkingDirs() {
