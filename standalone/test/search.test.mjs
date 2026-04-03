@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { estimatePostedHoursAgo, normalizePostedWithinHours } from '../lib/search.mjs';
+import {
+  estimatePostedHoursAgo,
+  normalizePostedWithinHours,
+  resolvePostedMetadata
+} from '../lib/search.mjs';
 import { parseSearchQuery } from '../lib/config.mjs';
 
 test('normalizePostedWithinHours rounds valid values and disables invalid ones', () => {
@@ -26,6 +30,32 @@ test('estimatePostedHoursAgo uses absolute datetimes when available', () => {
   );
 
   assert.equal(age, 24);
+});
+
+test('resolvePostedMetadata prefers a fresh candidate-card age over a stale detail-page age', () => {
+  const resolved = resolvePostedMetadata({
+    detailPostedText: '5 months ago',
+    detailPostedDatetime: '2025-10-25',
+    candidatePostedText: '42 minutes ago',
+    candidatePostedDatetime: '',
+    description: 'Data Analyst Kforce Inc Pittsburgh, PA 42 minutes ago Be among the first 25 applicants'
+  });
+
+  assert.equal(resolved.postedText, '42 minutes ago');
+  assert.equal(resolved.postedHoursAgo, 42 / 60);
+});
+
+test('resolvePostedMetadata falls back to inferred top-of-description recency when selectors are stale', () => {
+  const resolved = resolvePostedMetadata({
+    detailPostedText: '5 months ago',
+    detailPostedDatetime: '2025-10-25',
+    candidatePostedText: '',
+    candidatePostedDatetime: '',
+    description: 'Business Analyst Argo Data Resource Corporation Richardson, TX 2 hours ago 30 applicants'
+  });
+
+  assert.equal(resolved.postedText, '2 hours ago');
+  assert.equal(resolved.postedHoursAgo, 2);
 });
 
 test('parseSearchQuery strips relative-time phrases from keyword text', () => {

@@ -89,6 +89,95 @@ export function estimatePostedHoursAgo({ postedText = '', postedDatetime = '' } 
   return null;
 }
 
+function extractRelativePostedTextFromDescription(description = '') {
+  const normalized = normalizeWhitespace(String(description ?? ''));
+  if (!normalized) {
+    return '';
+  }
+
+  const snippet = normalized.slice(0, 500);
+  const match = snippet.match(
+    /\b(?:just now|today|yesterday|\d+\s+(?:seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|months?)\s+ago)\b/i
+  );
+
+  return match ? normalizeWhitespace(match[0]) : '';
+}
+
+export function resolvePostedMetadata({
+  detailPostedText = '',
+  detailPostedDatetime = '',
+  candidatePostedText = '',
+  candidatePostedDatetime = '',
+  description = ''
+} = {}) {
+  const inferredPostedText = extractRelativePostedTextFromDescription(description);
+  const detailAge = estimatePostedHoursAgo({
+    postedText: detailPostedText,
+    postedDatetime: detailPostedDatetime
+  });
+  const candidateAge = estimatePostedHoursAgo({
+    postedText: candidatePostedText,
+    postedDatetime: candidatePostedDatetime
+  });
+  const inferredAge = estimatePostedHoursAgo({ postedText: inferredPostedText });
+
+  // LinkedIn detail pages sometimes expose a stale absolute date while the search
+  // result card or the top-of-page text still shows the current relative posting time.
+  if (detailAge !== null && detailAge <= 48) {
+    return {
+      postedText: detailPostedText,
+      postedDatetime: detailPostedDatetime,
+      postedHoursAgo: detailAge
+    };
+  }
+
+  if (candidateAge !== null && candidateAge <= 48) {
+    return {
+      postedText: candidatePostedText,
+      postedDatetime: candidatePostedDatetime,
+      postedHoursAgo: candidateAge
+    };
+  }
+
+  if (inferredAge !== null && inferredAge <= 48) {
+    return {
+      postedText: inferredPostedText,
+      postedDatetime: '',
+      postedHoursAgo: inferredAge
+    };
+  }
+
+  if (detailAge !== null) {
+    return {
+      postedText: detailPostedText,
+      postedDatetime: detailPostedDatetime,
+      postedHoursAgo: detailAge
+    };
+  }
+
+  if (candidateAge !== null) {
+    return {
+      postedText: candidatePostedText,
+      postedDatetime: candidatePostedDatetime,
+      postedHoursAgo: candidateAge
+    };
+  }
+
+  if (inferredAge !== null) {
+    return {
+      postedText: inferredPostedText,
+      postedDatetime: '',
+      postedHoursAgo: inferredAge
+    };
+  }
+
+  return {
+    postedText: detailPostedText || candidatePostedText || inferredPostedText || '',
+    postedDatetime: detailPostedDatetime || candidatePostedDatetime || '',
+    postedHoursAgo: null
+  };
+}
+
 function buildSearchUrl(board, parsed, postedWithinHours = 0) {
   const base = board.searchUrl ?? '';
   const domain = board.domain ?? '';
@@ -344,6 +433,17 @@ async function hydrateJob(page, candidate, board) {
       return '';
     };
 
+    const pickAttribute = (selectors, attribute) => {
+      for (const selector of selectors) {
+        const element = document.querySelector(selector);
+        const value = normalize(element?.getAttribute(attribute) || '');
+        if (value) {
+          return value;
+        }
+      }
+      return '';
+    };
+
     const decodeRedirect = (href) => {
       if (!href) {
         return '';
@@ -459,15 +559,23 @@ async function hydrateJob(page, candidate, board) {
         ]) || '',
       postedText:
         pickText([
-          'time',
           '.posted-time-ago__text',
           '.jobs-unified-top-card__subtitle-secondary-grouping time',
           '.jobs-unified-top-card__tertiary-description time',
           '.jobsearch-JobMetadataFooter',
-          '.sort-by-time-posted'
+          '.sort-by-time-posted',
+          'time'
         ]) || '',
       postedDatetime:
-        document.querySelector('time')?.getAttribute('datetime') || '',
+        pickAttribute(
+          [
+            '.jobs-unified-top-card__subtitle-secondary-grouping time',
+            '.jobs-unified-top-card__tertiary-description time',
+            '.posted-time-ago__text',
+            'time'
+          ],
+          'datetime'
+        ) || '',
       description: bodyText || '',
       applyUrl: externalApply?.href || internalApply?.href || '',
       applySurface: externalApply ? 'external' : internalApply ? 'internal' : 'none'
@@ -490,9 +598,13 @@ async function hydrateJob(page, candidate, board) {
   const fallbackDirectSourceUrl =
     canonicalSourceUrl && !isAggregatorUrl(canonicalSourceUrl) ? canonicalSourceUrl : '';
   const effectiveApplyUrl = canonicalApplyUrl || fallbackDirectSourceUrl;
-  const postedText = details.postedText || candidate.postedText || '';
-  const postedDatetime = details.postedDatetime || candidate.postedDatetime || '';
-  const postedHoursAgo = estimatePostedHoursAgo({ postedText, postedDatetime });
+  const posted = resolvePostedMetadata({
+    detailPostedText: details.postedText,
+    detailPostedDatetime: details.postedDatetime,
+    candidatePostedText: candidate.postedText,
+    candidatePostedDatetime: candidate.postedDatetime,
+    description: details.description
+  });
 
   return {
     ...candidate,
@@ -501,9 +613,9 @@ async function hydrateJob(page, candidate, board) {
     title: cleanJobTitle(details.title || candidate.title),
     company: details.company || board.name,
     location: details.location,
-    postedText,
-    postedDatetime,
-    postedHoursAgo,
+    postedText: posted.postedText,
+    postedDatetime: posted.postedDatetime,
+    postedHoursAgo: posted.postedHoursAgo,
     description: details.description,
     applyUrl: effectiveApplyUrl || '',
     applySurface: effectiveApplyUrl
