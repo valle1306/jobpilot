@@ -69,6 +69,12 @@ To run the full Overleaf bootstrap on Windows without Claude-specific commands:
 .\scripts\overleaf-bootstrap.ps1
 ```
 
+To run the standalone unattended workflow:
+
+```powershell
+.\scripts\jobpilot-autorun.ps1
+```
+
 ### 3. Allow browser permissions (recommended)
 
 Add to `.claude/settings.json`:

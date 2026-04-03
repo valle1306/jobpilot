@@ -61,6 +61,7 @@ Usage:
   node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless]
   node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--limit 10]
   node standalone/jobpilot.mjs autopilot "manual batch" --file jobs-to-apply.txt [--yes] [--submit] [--resume resume.pdf]
+  node standalone/jobpilot.mjs autorun
 `);
 }
 
@@ -227,8 +228,106 @@ async function promptForApproval(jobs) {
   return answer;
 }
 
-async function commandAutopilot(query, flags) {
-  const { profile } = await loadProfile();
+function titleMatchesEntryLevel(title, standaloneConfig = {}) {
+  if (!standaloneConfig.entryLevelOnly) {
+    return true;
+  }
+
+  const normalized = String(title ?? '').toLowerCase();
+  const blocked = [
+    'senior',
+    'sr.',
+    'sr ',
+    'staff',
+    'principal',
+    'lead',
+    'manager',
+    'director',
+    'head',
+    'vice president',
+    'vp '
+  ];
+
+  return !blocked.some((keyword) => normalized.includes(keyword));
+}
+
+function locationMatches(job, standaloneConfig = {}, profile = {}) {
+  const preferred =
+    standaloneConfig.preferredLocations ??
+    profile.workAuthorization?.preferredLocations ??
+    [];
+
+  if (!preferred || preferred.length === 0 || preferred.includes('Anywhere')) {
+    return true;
+  }
+
+  const normalizedLocation = String(job.location ?? '').toLowerCase();
+  if (!normalizedLocation) {
+    return true;
+  }
+  if (normalizedLocation.includes('remote')) {
+    return true;
+  }
+
+  return preferred.some((location) =>
+    normalizedLocation.includes(String(location).toLowerCase())
+  );
+}
+
+function applyAutopilotFilters(jobs, profile, standaloneConfig = {}, minMatchScore = 6) {
+  const titleKeywords = [
+    ...(profile.autopilot?.skipTitleKeywords ?? []),
+    ...(standaloneConfig.skipTitleKeywords ?? [])
+  ].map((value) => String(value).toLowerCase());
+
+  return jobs.map((job) => {
+    if (job.status === 'skipped') {
+      return job;
+    }
+
+    const normalizedTitle = String(job.title ?? '').toLowerCase();
+    const blockedKeyword = titleKeywords.find((keyword) => normalizedTitle.includes(keyword));
+    if (blockedKeyword) {
+      return {
+        ...job,
+        status: 'skipped',
+        skipReason: `Title contains blocked keyword: ${blockedKeyword}`
+      };
+    }
+
+    if (!titleMatchesEntryLevel(job.title, standaloneConfig)) {
+      return {
+        ...job,
+        status: 'skipped',
+        skipReason: 'Filtered out by entry-level only mode'
+      };
+    }
+
+    if (!locationMatches(job, standaloneConfig, profile)) {
+      return {
+        ...job,
+        status: 'skipped',
+        skipReason: 'Outside preferred locations'
+      };
+    }
+
+    if (job.matchScore < minMatchScore) {
+      return {
+        ...job,
+        status: 'skipped',
+        skipReason: `Below minimum match score (${job.matchScore} < ${minMatchScore})`
+      };
+    }
+
+    return {
+      ...job,
+      status: 'pending',
+      skipReason: ''
+    };
+  });
+}
+
+async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   const { text: resumeText } = await readResumeText(profile);
   const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
   const maxApplications = Number(flags.limit ?? profile.autopilot?.maxApplicationsPerRun ?? 5);
@@ -255,17 +354,7 @@ async function commandAutopilot(query, flags) {
           resumeText
         });
 
-    run.jobs = jobs.map((job) => ({
-      ...job,
-      status:
-        job.status === 'skipped' || job.matchScore < minMatchScore ? 'skipped' : 'pending',
-      skipReason:
-        job.status === 'skipped'
-          ? job.skipReason
-          : job.matchScore < minMatchScore
-            ? `Below minimum match score (${job.matchScore} < ${minMatchScore})`
-            : ''
-    }));
+    run.jobs = applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore);
     await saveRun(runPath, run);
 
     const approvedCandidates = run.jobs
@@ -375,6 +464,38 @@ async function commandAutopilot(query, flags) {
   }
 }
 
+async function commandAutopilot(query, flags) {
+  const { profile } = await loadProfile();
+  await runAutopilot(profile, query, flags, profile.standalone ?? {});
+}
+
+async function commandAutorun() {
+  const { profile } = await loadProfile();
+  const standaloneConfig = profile.standalone ?? {};
+
+  if (standaloneConfig.enabled === false) {
+    throw new Error('profile.json standalone.enabled is false.');
+  }
+
+  const query =
+    standaloneConfig.query ??
+    'entry level data scientist remote new york new jersey pennsylvania';
+
+  const flags = {
+    yes: standaloneConfig.autoApprove ?? true,
+    submit: standaloneConfig.autoSubmit ?? true,
+    headless: standaloneConfig.headless ?? true,
+    limit:
+      standaloneConfig.maxApplicationsPerRun ??
+      profile.autopilot?.maxApplicationsPerRun ??
+      5,
+    file: standaloneConfig.mode === 'file' ? standaloneConfig.filePath : '',
+    resume: standaloneConfig.resumePath ?? ''
+  };
+
+  await runAutopilot(profile, query, flags, standaloneConfig);
+}
+
 async function main() {
   const [, , command = 'help', ...rest] = process.argv;
   const { positional, flags } = parseCliArgs(rest);
@@ -411,6 +532,9 @@ async function main() {
         throw new Error('autopilot requires a search query');
       }
       await commandAutopilot(positional.join(' '), flags);
+      break;
+    case 'autorun':
+      await commandAutorun();
       break;
     default:
       printHelp();

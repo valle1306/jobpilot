@@ -19,6 +19,12 @@ Use the PowerShell wrapper:
 .\scripts\jobpilot-standalone.ps1 help
 ```
 
+For unattended runs from a desktop shortcut:
+
+```powershell
+.\scripts\jobpilot-autorun.ps1
+```
+
 ### Setup
 
 ```powershell
@@ -61,6 +67,39 @@ File-driven batch mode:
 .\scripts\jobpilot-standalone.ps1 autopilot "manual batch" --file jobs-to-apply.txt --yes
 .\scripts\jobpilot-standalone.ps1 autopilot "manual batch" --file jobs-to-apply.txt --yes --submit
 ```
+
+### Autorun
+
+`autorun` reads the `standalone` block from `profile.json` and runs without prompts.
+
+```powershell
+.\scripts\jobpilot-standalone.ps1 autorun
+```
+
+Current `standalone` config supports:
+
+- `mode`: `query` or `file`
+- `query`: default search query
+- `filePath`: URL list for file-driven batches
+- `headless`: run the browser headlessly
+- `autoApprove`: skip batch confirmation
+- `autoSubmit`: submit application forms automatically
+- `entryLevelOnly`: skip senior/staff/manager-style titles
+- `preferredLocations`: preferred locations for filtering
+- `skipTitleKeywords`: extra blocked title keywords
+- `maxApplicationsPerRun`
+- `resumePath`: optional direct resume override
+- `logDir`: where autorun logs go
+
+### Desktop Shortcut
+
+To install a desktop shortcut that launches the unattended workflow:
+
+```powershell
+.\scripts\install-desktop-shortcut.ps1
+```
+
+That shortcut points to [scripts/jobpilot-autorun.cmd](c:\Users\lpnhu\Downloads\jobpilot\scripts\jobpilot-autorun.cmd), which in turn runs [scripts/jobpilot-autorun.ps1](c:\Users\lpnhu\Downloads\jobpilot\scripts\jobpilot-autorun.ps1).
 
 ## Current Scope
 

@@ -20,7 +20,7 @@
     "visaStatus": "OPT",
     "optExtension": "STEM OPT",
     "willingToRelocate": true,
-    "preferredLocations": ["New York, NY", "Remote"]
+    "preferredLocations": ["New York, NY", "New Jersey", "Pennsylvania", "Remote"]
   },
   "eeo": {
     "gender": "Prefer not to disclose",
@@ -111,7 +111,7 @@
     "maxApplicationsPerRun": 10,
     "confirmMode": "batch",
     "skipCompanies": [],
-    "skipTitleKeywords": [],
+    "skipTitleKeywords": ["senior", "staff", "principal", "lead", "manager", "director"],
     "minSalary": 0,
     "maxSalary": 0,
     "salaryExpectation": "$100,001 to $125,000",
@@ -132,5 +132,20 @@
     "gitToken": "YOUR_OVERLEAF_GIT_TOKEN",
     "webPassword": "",
     "tailorResume": true
+  },
+  "standalone": {
+    "enabled": true,
+    "mode": "query",
+    "query": "entry level data scientist remote new york new jersey pennsylvania",
+    "filePath": "./jobs-to-apply.txt",
+    "headless": true,
+    "autoApprove": true,
+    "autoSubmit": true,
+    "entryLevelOnly": true,
+    "preferredLocations": ["New York, NY", "New Jersey", "Pennsylvania", "Remote"],
+    "skipTitleKeywords": ["senior", "staff", "principal", "lead", "manager", "director"],
+    "maxApplicationsPerRun": 8,
+    "resumePath": "",
+    "logDir": "./runs/standalone-logs"
   }
 }
