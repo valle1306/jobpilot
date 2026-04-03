@@ -15,6 +15,7 @@ import {
   getDirectApplyTier,
   isAggregatorUrl,
   normalizeWhitespace,
+  resolveEffectiveApplyUrl,
   truncate
 } from './utils.mjs';
 import { wasAlreadyApplied } from './runs.mjs';
@@ -393,6 +394,10 @@ async function hydrateJob(page, candidate, board) {
   if (!resolvedApplyUrl && isAggregatorUrl(candidate.url)) {
     resolvedApplyUrl = await probeDirectApplyUrl(page);
   }
+  const canonicalApplyUrl = canonicalizeJobUrl(resolvedApplyUrl);
+  const fallbackDirectSourceUrl =
+    canonicalSourceUrl && !isAggregatorUrl(canonicalSourceUrl) ? canonicalSourceUrl : '';
+  const effectiveApplyUrl = canonicalApplyUrl || fallbackDirectSourceUrl;
 
   return {
     ...candidate,
@@ -402,14 +407,13 @@ async function hydrateJob(page, candidate, board) {
     company: details.company || board.name,
     location: details.location,
     description: details.description,
-    applyUrl: resolvedApplyUrl || '',
-    applySurface:
-      details.applySurface === 'external'
-        ? 'direct'
-        : isAggregatorUrl(candidate.url)
-          ? 'aggregator'
-          : details.applySurface,
-    applyTier: getDirectApplyTier(resolvedApplyUrl),
+    applyUrl: effectiveApplyUrl || '',
+    applySurface: effectiveApplyUrl
+      ? 'direct'
+      : isAggregatorUrl(candidate.url)
+        ? 'aggregator'
+        : details.applySurface,
+    applyTier: getDirectApplyTier(effectiveApplyUrl),
     board: board.name,
     boardDomain: board.domain
   };
@@ -536,10 +540,14 @@ export async function searchJobs({
     const alreadyApplied =
       (job.applyUrl && (await wasAlreadyApplied(job.applyUrl))) ||
       (await wasAlreadyApplied(job.url));
+    const effectiveApplyUrl = resolveEffectiveApplyUrl(job);
     filtered.push({
       ...job,
+      applyUrl: effectiveApplyUrl || '',
       status: alreadyApplied ? 'skipped' : 'pending',
-      skipReason: alreadyApplied ? 'Already applied' : ''
+      stage: alreadyApplied ? 'skipped' : 'discovered',
+      skipReason: alreadyApplied ? 'Already applied' : '',
+      skipCategory: alreadyApplied ? 'duplicate' : ''
     });
   }
 
@@ -564,6 +572,6 @@ export function renderSearchTable(jobs) {
 export function renderSearchLinks(jobs, count = 5) {
   return jobs
     .slice(0, count)
-    .map((job) => `${job.id}. ${truncate(job.title, 64)}\n   ${job.url}`)
+    .map((job) => `${job.id}. ${truncate(job.title, 64)}\n   ${job.applyUrl || job.url}`)
     .join('\n');
 }

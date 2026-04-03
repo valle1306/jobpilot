@@ -102,7 +102,10 @@ Current `standalone` config supports:
 - `headless`: run the browser headlessly
 - `autoApprove`: skip batch confirmation
 - `autoSubmit`: submit application forms automatically
+- `runLoopMode`: currently `one-pass`; autorun searches once, processes the current batch, and exits with a summary
+- `failurePolicy`: currently `continue-and-log`; failed jobs are recorded and the run continues
 - `searchMode`: `balanced` or `direct-ats-first`; the direct ATS mode ranks Greenhouse, Lever, and Workday-style hosts ahead of generic external apply links
+- `applySurfacePolicy`: default `external-only`; unattended runs use LinkedIn as discovery only and follow extracted external apply targets
 - `entryLevelOnly`: skip senior/staff/manager-style titles
 - `entryLevelMaxYears`: skip roles that explicitly ask for more than this many years of experience
 - `preferredLocations`: preferred locations for filtering; use `["Anywhere"]` or `[]` to disable location filtering
@@ -114,6 +117,20 @@ Current `standalone` config supports:
 - `searchLimitPerQuery`: how many jobs to hydrate per query before filtering
 - `resumePath`: optional direct resume override
 - `logDir`: where autorun logs go
+
+Each autorun now writes:
+
+- a machine-readable JSON run file in `runs`
+- a human-readable summary file next to it as `*.summary.txt`
+
+The unattended workflow order is:
+
+- discover jobs
+- filter to unattended-safe external apply targets
+- tailor resume with OpenAI
+- compile and download the one-page PDF from Overleaf
+- upload the PDF into the ATS/company form
+- submit and record the result
 
 Current `openai` config supports:
 
@@ -150,6 +167,6 @@ You can verify the shortcut status any time with:
 - Tailoring in standalone mode can now use OpenAI for JD-aware bullet rewrites, but it still validates edits aggressively and falls back to the conservative path if an edit looks unsafe.
 - If you enable `requireOpenAITailoring`, that conservative fallback is no longer accepted for unattended applying. The run will fail that job instead of applying with a non-OpenAI-tailored resume.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
-- Unattended runs work best with direct ATS/company URLs. Aggregator-only pages like LinkedIn are now treated as discovery sources unless JobPilot can extract a direct apply link.
+- Unattended runs work best with direct ATS/company URLs. LinkedIn Easy Apply is skipped in unattended mode; LinkedIn is treated as a discovery source unless JobPilot can extract a direct external apply link.
 - If Overleaf still triggers a one-time verification step, run `.\scripts\overleaf-login-bootstrap.ps1` first so the persistent browser session is ready before autorun starts.
 - Some search boards now block unattended browsers entirely. When that happens, autorun will log the board-specific block reason instead of silently returning zero jobs.

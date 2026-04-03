@@ -29,6 +29,7 @@ import {
   getUrlHostname,
   normalizeWhitespace,
   prompt,
+  resolveEffectiveApplyUrl,
   truncate,
   uniqueBy
 } from './lib/utils.mjs';
@@ -70,7 +71,7 @@ Usage:
   node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless] [--search-mode direct-ats-first]
   node standalone/jobpilot.mjs tailor <job-url> [--headless] [--no-download]
   node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless]
-  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--limit 10] [--search-mode direct-ats-first]
+  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--limit 10] [--search-mode direct-ats-first] [--apply-surface-policy external-only]
   node standalone/jobpilot.mjs autopilot "manual batch" --file jobs-to-apply.txt [--yes] [--submit] [--resume resume.pdf]
   node standalone/jobpilot.mjs autorun
 `);
@@ -194,8 +195,11 @@ async function loadJobsFromUrlFile({ context, filePath, resumeText, query }) {
     jobs.push({
       id: jobs.length + 1,
       ...job,
+      sourceUrl: job.sourceUrl || url,
       status: alreadyApplied ? 'skipped' : 'pending',
+      stage: alreadyApplied ? 'skipped' : 'discovered',
       skipReason: alreadyApplied ? 'Already applied' : '',
+      skipCategory: alreadyApplied ? 'duplicate' : '',
       matchScore: scored.score,
       matchReason: scored.reason,
       matchedKeywords: scored.matchedKeywords,
@@ -402,6 +406,24 @@ function resolveRequireDirectApply(standaloneConfig = {}, flags = {}) {
   return Boolean(flags.submit) || Boolean(flags.headless) || Boolean(flags.yes);
 }
 
+function resolveApplySurfacePolicy(standaloneConfig = {}, flags = {}) {
+  const configured = String(
+    flags['apply-surface-policy'] ?? standaloneConfig.applySurfacePolicy ?? 'external-only'
+  )
+    .trim()
+    .toLowerCase();
+
+  if (configured === 'external-only') {
+    return 'external-only';
+  }
+
+  if (configured === 'any-direct') {
+    return 'any-direct';
+  }
+
+  return 'external-only';
+}
+
 function resolveSearchMode(rawValue = 'balanced') {
   const normalized = String(rawValue ?? 'balanced').trim().toLowerCase();
   if (normalized === 'direct-ats-first') {
@@ -443,6 +465,66 @@ function resolveRequireOpenAITailoring(profile = {}, standaloneConfig = {}, flag
   return false;
 }
 
+function resolveRunLoopMode(standaloneConfig = {}, flags = {}) {
+  const configured = String(flags['run-loop-mode'] ?? standaloneConfig.runLoopMode ?? 'one-pass')
+    .trim()
+    .toLowerCase();
+
+  return configured === 'one-pass' ? 'one-pass' : 'one-pass';
+}
+
+function resolveFailurePolicy(standaloneConfig = {}, flags = {}) {
+  const configured = String(
+    flags['failure-policy'] ?? standaloneConfig.failurePolicy ?? 'continue-and-log'
+  )
+    .trim()
+    .toLowerCase();
+
+  return configured === 'continue-and-log' ? 'continue-and-log' : 'continue-and-log';
+}
+
+function withJobApplyMetadata(job, preferredDomains = []) {
+  const applyUrl = resolveEffectiveApplyUrl(job);
+  return {
+    ...job,
+    applyUrl,
+    applyTier: getDirectApplyTier(applyUrl, preferredDomains),
+    applyHost: getUrlHostname(applyUrl)
+  };
+}
+
+function buildSkippedJob(job, reason, skipCategory = 'filters', preferredDomains = []) {
+  const enriched = withJobApplyMetadata(job, preferredDomains);
+  return {
+    ...enriched,
+    status: 'skipped',
+    stage: 'skipped',
+    skipReason: reason,
+    skipCategory,
+    failStage: '',
+    failReason: ''
+  };
+}
+
+function classifyTailoringFailureStage(errorMessage = '') {
+  const normalized = String(errorMessage ?? '').toLowerCase();
+  if (
+    normalized.includes('did not produce a pdf') ||
+    normalized.includes('compiled pdf') ||
+    normalized.includes('download the compiled pdf') ||
+    normalized.includes('overleaf editor did not finish loading') ||
+    normalized.includes('overleaf website login requires manual verification')
+  ) {
+    return 'pdf_generation';
+  }
+
+  return 'tailoring';
+}
+
+function classifyApplyFailureStage(result = {}) {
+  return 'application';
+}
+
 function validateTailoringForApply(tailored, requireOpenAITailoring = false) {
   if (!tailored) {
     return {
@@ -481,15 +563,14 @@ function validateTailoringForApply(tailored, requireOpenAITailoring = false) {
 
 function rankSearchResults(jobs, rawSearchMode = 'balanced', preferredDomains = []) {
   const searchMode = resolveSearchMode(rawSearchMode);
+  const enrichedJobs = jobs.map((job) => withJobApplyMetadata(job, preferredDomains));
   if (searchMode !== 'direct-ats-first') {
-    return jobs;
+    return enrichedJobs;
   }
 
-  return [...jobs]
+  return [...enrichedJobs]
     .sort((left, right) => {
-      const tierDiff =
-        getDirectApplyTier(right.applyUrl, preferredDomains) -
-        getDirectApplyTier(left.applyUrl, preferredDomains);
+      const tierDiff = (right.applyTier ?? 0) - (left.applyTier ?? 0);
       if (tierDiff !== 0) {
         return tierDiff;
       }
@@ -503,9 +584,7 @@ function rankSearchResults(jobs, rawSearchMode = 'balanced', preferredDomains = 
     })
     .map((job, index) => ({
       ...job,
-      id: index + 1,
-      applyTier: getDirectApplyTier(job.applyUrl, preferredDomains),
-      applyHost: getUrlHostname(job.applyUrl)
+      id: index + 1
     }));
 }
 
@@ -521,66 +600,82 @@ function applyAutopilotFilters(
     ...(standaloneConfig.skipTitleKeywords ?? [])
   ].map((value) => String(value).toLowerCase());
   const requireDirectApply = Boolean(options.requireDirectApply);
+  const applySurfacePolicy = options.applySurfacePolicy ?? 'external-only';
+  const preferredDomains = options.preferredAtsDomains ?? [];
 
   return jobs.map((job) => {
     if (job.status === 'skipped') {
-      return job;
+      return withJobApplyMetadata(job, preferredDomains);
     }
 
+    const enrichedJob = withJobApplyMetadata(job, preferredDomains);
     const normalizedTitle = String(job.title ?? '').toLowerCase();
     const blockedKeyword = titleKeywords.find((keyword) => normalizedTitle.includes(keyword));
     if (blockedKeyword) {
-      return {
-        ...job,
-        status: 'skipped',
-        skipReason: `Title contains blocked keyword: ${blockedKeyword}`
-      };
+      return buildSkippedJob(
+        enrichedJob,
+        `Title contains blocked keyword: ${blockedKeyword}`,
+        'filters',
+        preferredDomains
+      );
     }
 
     if (!titleMatchesEntryLevel(job.title, standaloneConfig)) {
-      return {
-        ...job,
-        status: 'skipped',
-        skipReason: 'Filtered out by entry-level only mode'
-      };
+      return buildSkippedJob(
+        enrichedJob,
+        'Filtered out by entry-level only mode',
+        'filters',
+        preferredDomains
+      );
     }
 
     if (!yearsMatchEntryLevel(job, standaloneConfig)) {
-      return {
-        ...job,
-        status: 'skipped',
-        skipReason: `Requires more than ${resolveEntryLevelMaxYears(standaloneConfig)} years of experience`
-      };
+      return buildSkippedJob(
+        enrichedJob,
+        `Requires more than ${resolveEntryLevelMaxYears(standaloneConfig)} years of experience`,
+        'filters',
+        preferredDomains
+      );
     }
 
     if (!locationMatches(job, standaloneConfig, profile)) {
-      return {
-        ...job,
-        status: 'skipped',
-        skipReason: 'Outside preferred locations'
-      };
+      return buildSkippedJob(
+        enrichedJob,
+        'Outside preferred locations',
+        'filters',
+        preferredDomains
+      );
     }
 
-    if (requireDirectApply && job.applySurface === 'aggregator' && !job.applyUrl) {
-      return {
-        ...job,
-        status: 'skipped',
-        skipReason: 'No direct ATS apply URL extracted from the aggregator listing'
-      };
+    if (
+      (applySurfacePolicy === 'external-only' || requireDirectApply) &&
+      !enrichedJob.applyUrl
+    ) {
+      return buildSkippedJob(
+        enrichedJob,
+        'No direct external apply URL extracted from the listing',
+        'no-direct-apply',
+        preferredDomains
+      );
     }
 
     if (job.matchScore < minMatchScore) {
-      return {
-        ...job,
-        status: 'skipped',
-        skipReason: `Below minimum match score (${job.matchScore} < ${minMatchScore})`
-      };
+      return buildSkippedJob(
+        enrichedJob,
+        `Below minimum match score (${job.matchScore} < ${minMatchScore})`,
+        'filters',
+        preferredDomains
+      );
     }
 
     return {
-      ...job,
+      ...enrichedJob,
       status: 'pending',
-      skipReason: ''
+      stage: 'qualified',
+      skipReason: '',
+      skipCategory: '',
+      failStage: '',
+      failReason: ''
     };
   });
 }
@@ -654,7 +749,7 @@ function mergeSearchResults(jobs) {
   const byUrl = new Map();
 
   for (const job of jobs) {
-    const canonicalPrimaryUrl = canonicalizeJobUrl(job.applyUrl || job.url);
+    const canonicalPrimaryUrl = canonicalizeJobUrl(resolveEffectiveApplyUrl(job) || job.url);
     const canonicalSourceUrl = canonicalizeJobUrl(job.sourceUrl || job.url);
     const companyKey = normalizeWhitespace(job.company || 'unknown').toLowerCase();
     const titleKey = normalizeWhitespace(job.title || job.url).toLowerCase();
@@ -718,16 +813,17 @@ async function searchAcrossQueries({
       }
     });
 
-    const directApplyCount = jobs.filter((job) => job.applyUrl && job.applyUrl !== job.url).length;
-    const preferredAtsCount = jobs.filter(
-      (job) => getDirectApplyTier(job.applyUrl, preferredAtsDomains) >= 3
+    const rankedJobs = rankSearchResults(jobs, searchMode, preferredAtsDomains);
+    const directApplyCount = rankedJobs.filter((job) => Boolean(job.applyUrl)).length;
+    const preferredAtsCount = rankedJobs.filter(
+      (job) => getDirectApplyTier(resolveEffectiveApplyUrl(job), preferredAtsDomains) >= 3
     ).length;
     console.log(
-      `  Query summary: ${jobs.length} candidates after board dedupe, ${directApplyCount} with direct apply links, ${preferredAtsCount} on preferred ATS hosts`
+      `  Query summary: ${rankedJobs.length} candidates after board dedupe, ${directApplyCount} with direct external apply targets, ${preferredAtsCount} on preferred ATS hosts`
     );
 
     aggregated.push(
-      ...jobs.map((job) => ({
+      ...rankedJobs.map((job) => ({
         ...job,
         sourceQueries: [query]
       }))
@@ -763,9 +859,12 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     maxApplications
   );
   const requireDirectApply = resolveRequireDirectApply(standaloneConfig, flags);
+  const applySurfacePolicy = resolveApplySurfacePolicy(standaloneConfig, flags);
   const searchMode = resolveSearchMode(flags['search-mode'] ?? standaloneConfig.searchMode);
   const preferredAtsDomains = resolvePreferredAtsDomains(standaloneConfig);
   const requireOpenAITailoring = resolveRequireOpenAITailoring(profile, standaloneConfig, flags);
+  const runLoopMode = resolveRunLoopMode(standaloneConfig, flags);
+  const failurePolicy = resolveFailurePolicy(standaloneConfig, flags);
 
   const { runPath, run } = await createRunFile(runQuery, {
     minMatchScore,
@@ -773,7 +872,10 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     queries,
     searchLimitPerQuery: perQueryLimit,
     allowManualPrompt,
+    runLoopMode,
+    failurePolicy,
     requireDirectApply,
+    applySurfacePolicy,
     searchMode,
     preferredAtsDomains,
     requireOpenAITailoring
@@ -800,7 +902,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
 
     run.jobs = rankSearchResults(
       applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore, {
-      requireDirectApply
+        requireDirectApply,
+        applySurfacePolicy,
+        preferredAtsDomains
       }),
       searchMode,
       preferredAtsDomains
@@ -820,14 +924,10 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
       return;
     }
 
-    const directApplyCount = approvedCandidates.filter(
-      (job) => job.applyUrl && job.applyUrl !== job.url
-    ).length;
-    const preferredAtsCount = approvedCandidates.filter(
-      (job) => getDirectApplyTier(job.applyUrl, preferredAtsDomains) >= 3
-    ).length;
+    const directApplyCount = approvedCandidates.filter((job) => Boolean(job.applyUrl)).length;
+    const preferredAtsCount = approvedCandidates.filter((job) => (job.applyTier ?? 0) >= 3).length;
     console.log(
-      `Qualified ${approvedCandidates.length} jobs for apply. ${directApplyCount} will use direct company application URLs, ${preferredAtsCount} on preferred ATS hosts.`
+      `Qualified ${approvedCandidates.length} jobs for apply. ${directApplyCount} have direct external apply targets, ${preferredAtsCount} are on preferred ATS hosts.`
     );
 
     let approvedIds = approvedCandidates.map((job) => job.id);
@@ -851,9 +951,12 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     for (const job of run.jobs) {
       if (approvedIds.includes(job.id) && job.status === 'pending') {
         job.status = 'approved';
+        job.stage = 'qualified';
       } else if (job.status === 'pending') {
         job.status = 'skipped';
+        job.stage = 'skipped';
         job.skipReason = 'Not selected for this run';
+        job.skipCategory = 'not-selected';
       }
     }
 
@@ -861,13 +964,16 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
 
     const approvedJobs = run.jobs.filter((entry) => entry.status === 'approved');
     for (const [index, job] of approvedJobs.entries()) {
+      const applyTargetUrl = resolveEffectiveApplyUrl(job);
       console.log(
         `Applying ${index + 1}/${approvedJobs.length}: ${truncate(job.title, 56)} at ${truncate(job.company, 32)}`
       );
-      if (job.applyUrl && job.applyUrl !== job.url) {
-        const applyHost = getUrlHostname(job.applyUrl);
-        console.log(`  Direct apply URL: ${job.applyUrl}`);
+      if (applyTargetUrl) {
+        const applyHost = getUrlHostname(applyTargetUrl);
+        job.applyUrl = applyTargetUrl;
+        console.log(`  Apply target URL: ${applyTargetUrl}`);
         if (applyHost) {
+          job.applyHost = applyHost;
           console.log(`  Apply host: ${applyHost}`);
         }
       } else {
@@ -875,6 +981,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
       }
 
       job.status = 'applying';
+      job.stage = 'tailoring_started';
+      job.failStage = '';
+      job.failReason = '';
       await saveRun(runPath, run);
 
       let tailoredResumePath = '';
@@ -894,6 +1003,13 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
             throw new Error(tailoringCheck.message);
           }
           tailoredResumePath = tailored.tailoredResumePath;
+          job.tailoringMethod = tailored.tailoringMethod;
+          job.modelUsed = tailored.modelUsed || '';
+          job.tailoringSummary = tailored.tailoringSummary || '';
+          job.tailoredResumePath = tailored.tailoredResumePath || '';
+          job.tailorWarning = tailored.tailoringWarning || '';
+          job.stage = 'pdf_ready';
+          await saveRun(runPath, run);
           console.log(
             `  Tailor complete: ${tailored.roleType}, ${tailored.addedKeywords.length} keyword updates, ${tailored.tailoringMethod}${tailored.modelUsed ? ` (${tailored.modelUsed})` : ''}`
           );
@@ -904,6 +1020,8 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
           job.tailorWarning = error.message;
           console.log(`  Tailor warning: ${error.message}`);
           job.status = 'failed';
+          job.stage = 'tailoring_failed';
+          job.failStage = classifyTailoringFailureStage(error.message);
           job.failReason = error.message;
           await saveRun(runPath, run);
           continue;
@@ -911,6 +1029,8 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
       }
 
       console.log('  Filling application...');
+      job.stage = 'apply_started';
+      await saveRun(runPath, run);
       const result = await applyToJob({
         profile,
         url: job.url,
@@ -922,20 +1042,30 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
         context,
         resumeText,
         resumePathOverride: flags.resume ? resolveRepoPath(flags.resume) : '',
-        allowManualPrompt
+        allowManualPrompt,
+        runId: run.runId,
+        source: 'standalone-autorun'
       });
 
       job.result = result.status;
+      job.tailoredResumePath ||= result.resumePath || '';
       if (result.status === 'applied' || result.status === 'submitted-unknown') {
         job.status = 'applied';
+        job.stage = 'applied';
         job.appliedAt = new Date().toISOString();
+        job.failStage = '';
+        job.failReason = '';
         console.log(`  Result: ${result.status}`);
       } else if (result.status === 'cancelled') {
         job.status = 'skipped';
+        job.stage = 'skipped';
         job.skipReason = 'Cancelled during apply';
+        job.skipCategory = 'cancelled';
         console.log('  Result: cancelled');
       } else {
         job.status = 'failed';
+        job.stage = 'failed';
+        job.failStage = classifyApplyFailureStage(result);
         job.failReason = result.failReason || result.status;
         console.log(`  Result: failed (${job.failReason})`);
       }
@@ -949,10 +1079,13 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
 
     console.log(`\nAutopilot run saved to ${runPath}`);
     console.log(
+      `Summary: discovered ${run.summary.totalFound}, qualified ${run.summary.qualified}, applied ${run.summary.applied}, failed ${run.summary.failed}, skipped ${run.summary.skipped}`
+    );
+    console.log(
       run.jobs
         .map(
           (job) =>
-            `${job.id}. ${truncate(job.title, 48)} | ${job.status}${job.failReason ? ` | ${job.failReason}` : ''}`
+            `${job.id}. ${truncate(job.title, 48)} | ${job.status} | ${job.stage}${job.failReason ? ` | ${job.failReason}` : ''}`
         )
         .join('\n')
     );
@@ -991,6 +1124,9 @@ async function commandAutorun() {
     resume: standaloneConfig.resumePath ?? '',
     'search-limit': standaloneConfig.searchLimitPerQuery ?? '',
     'search-mode': standaloneConfig.searchMode ?? '',
+    'apply-surface-policy': standaloneConfig.applySurfacePolicy ?? '',
+    'run-loop-mode': standaloneConfig.runLoopMode ?? '',
+    'failure-policy': standaloneConfig.failurePolicy ?? '',
     'require-openai-tailoring': standaloneConfig.requireOpenAITailoring ?? ''
   };
 

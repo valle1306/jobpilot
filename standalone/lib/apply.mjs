@@ -16,7 +16,7 @@ import {
 } from './browser.mjs';
 import { ensureUploadResumePath, tailorJob } from './tailor.mjs';
 import { logAppliedJob } from './runs.mjs';
-import { normalizeWhitespace, prompt, truncate } from './utils.mjs';
+import { normalizeWhitespace, prompt, resolveEffectiveApplyUrl, truncate } from './utils.mjs';
 
 function normalizeLabel(value) {
   return normalizeWhitespace(value).toLowerCase();
@@ -389,14 +389,16 @@ export async function applyToJob({
   context = null,
   resumeText = '',
   resumePathOverride = '',
-  allowManualPrompt = true
+  allowManualPrompt = true,
+  runId = '',
+  source = 'standalone-apply'
 }) {
   const ownsContext = !context;
   const browserContext = context ?? (await launchBrowserContext({ headless }));
 
   try {
     const page = await browserContext.newPage();
-    const targetUrl = job.applyUrl || url;
+    const targetUrl = resolveEffectiveApplyUrl(job) || url;
     await gotoAndSettle(page, targetUrl);
 
     let jobDetails = {
@@ -561,7 +563,8 @@ export async function applyToJob({
             url: targetUrl,
             title: jobDetails.title || 'Unknown title',
             company: jobDetails.company || 'Unknown company',
-            source: 'standalone-apply'
+            source,
+            runId
           });
           return {
             status: 'applied',

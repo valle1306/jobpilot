@@ -292,6 +292,20 @@ export function getDirectApplyTier(rawUrl, preferredDomains = []) {
   return 1;
 }
 
+export function resolveEffectiveApplyUrl(job = {}) {
+  const directApplyUrl = canonicalizeJobUrl(job.applyUrl || '');
+  if (directApplyUrl && !isAggregatorUrl(directApplyUrl)) {
+    return directApplyUrl;
+  }
+
+  const directSourceUrl = canonicalizeJobUrl(job.url || job.sourceUrl || '');
+  if (directSourceUrl && !isAggregatorUrl(directSourceUrl)) {
+    return directSourceUrl;
+  }
+
+  return '';
+}
+
 function collapseRepeatedLeadingPhrase(value) {
   const normalized = normalizeWhitespace(value);
   const repeated = normalized.match(/^(.{6,}?)\s+\1(?:\s+|$)(.*)$/i);

@@ -7,7 +7,8 @@ import {
   extractExternalJobUrl,
   getDirectApplyTier,
   extractKnownDirectJobUrl,
-  isAggregatorUrl
+  isAggregatorUrl,
+  resolveEffectiveApplyUrl
 } from '../lib/utils.mjs';
 
 test('extractExternalJobUrl decodes redirected apply links', () => {
@@ -51,6 +52,24 @@ test('getDirectApplyTier prioritizes preferred ATS domains ahead of generic exte
   assert.equal(getDirectApplyTier('https://ibmglobal.avature.net/en_US/careers/JobDetail?jobId=87026'), 2);
   assert.equal(getDirectApplyTier('https://company.example/jobs/123'), 1);
   assert.equal(getDirectApplyTier('https://www.linkedin.com/jobs/view/123/apply/'), 0);
+});
+
+test('resolveEffectiveApplyUrl prefers non-aggregator apply URLs and falls back to direct source URLs', () => {
+  assert.equal(
+    resolveEffectiveApplyUrl({
+      url: 'https://www.linkedin.com/jobs/view/123',
+      applyUrl: 'https://jobs.lever.co/acme/123?utm_source=linkedin'
+    }),
+    'https://jobs.lever.co/acme/123'
+  );
+
+  assert.equal(
+    resolveEffectiveApplyUrl({
+      url: 'https://careers.acme.com/jobs/data-analyst-1',
+      applyUrl: ''
+    }),
+    'https://careers.acme.com/jobs/data-analyst-1'
+  );
 });
 
 test('cleanJobTitle removes LinkedIn verification suffixes and duplicate titles', () => {
