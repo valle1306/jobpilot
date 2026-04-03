@@ -14,7 +14,12 @@ import {
   resolveRepoPath
 } from './lib/config.mjs';
 import { launchBrowserContext } from './lib/browser.mjs';
-import { saveRun, createRunFile, wasAlreadyApplied } from './lib/runs.mjs';
+import {
+  buildRunCompletionOverview,
+  saveRun,
+  createRunFile,
+  wasAlreadyApplied
+} from './lib/runs.mjs';
 import { scoreJob } from './lib/scoring.mjs';
 import {
   renderSearchLinks,
@@ -1170,17 +1175,8 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     await saveRun(runPath, run);
 
     console.log(`\nAutopilot run saved to ${runPath}`);
-    console.log(
-      `Summary: discovered ${run.summary.totalFound}, qualified ${run.summary.qualified}, applied ${run.summary.applied}, failed ${run.summary.failed}, skipped ${run.summary.skipped}`
-    );
-    console.log(
-      run.jobs
-        .map(
-          (job) =>
-            `${job.id}. ${truncate(job.title, 48)} | ${job.status} | ${job.stage}${job.failReason ? ` | ${job.failReason}` : ''}`
-        )
-        .join('\n')
-    );
+    console.log('');
+    console.log(buildRunCompletionOverview(run));
   } finally {
     await context.close().catch(() => {});
   }

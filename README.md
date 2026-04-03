@@ -105,6 +105,7 @@ Standalone search and autorun can also enforce a posting-age window such as `pas
 Redirector-style hosts such as `jobright.ai`, `appcast`, and similar non-ATS wrappers are also skipped in unattended mode, and repeated login/verification/incomplete failures on the same apply host are short-circuited for the rest of the run.
 The ATS filler now also handles hidden resume upload inputs better, which matters on sites like Lever where the visible upload control often wraps a hidden file field.
 Each autorun now writes both a machine-readable run JSON and a human-readable `*.summary.txt` file in `runs`, including applied, failed, skipped, stage-specific totals, and skip buckets such as duplicate, no-direct-apply, and too-old postings.
+Standalone completion summaries now also group outcomes by board/apply host and break down why jobs failed or were skipped, closer to the original Claude `/autopilot` reporting style.
 
 To create a Desktop shortcut for the unattended workflow:
 

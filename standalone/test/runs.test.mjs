@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRunSummary, buildRunSummaryText } from '../lib/runs.mjs';
+import {
+  buildRunSummary,
+  buildRunSummaryText,
+  buildRunCompletionOverview
+} from '../lib/runs.mjs';
 
 test('buildRunSummary counts stage-specific skips and failures', () => {
   const run = {
@@ -72,6 +76,8 @@ test('buildRunSummary counts stage-specific skips and failures', () => {
   assert.equal(summary.failedApplication, 1);
   assert.equal(summary.stageCounts.applied, 1);
   assert.equal(summary.stageCounts.tailoring_failed, 1);
+  assert.equal(summary.boardCounts.Lever.applied, 1);
+  assert.equal(summary.boardCounts.Unknown.failed, 2);
 });
 
 test('buildRunSummaryText includes top failure reasons and bucket totals', () => {
@@ -96,6 +102,50 @@ test('buildRunSummaryText includes top failure reasons and bucket totals', () =>
 
   assert.match(text, /failed during application\/login\/form handling: 1/);
   assert.match(text, /skipped for being older than the configured posting window: 0/);
+  assert.match(text, /By board\/apply host:/);
+  assert.match(text, /Successfully applied:/);
+  assert.match(text, /Failed \(can retry\):/);
+  assert.match(text, /Top skip causes:/);
   assert.match(text, /Top failure causes:/);
   assert.match(text, /Login is required before applying\./);
+});
+
+test('buildRunCompletionOverview renders board and failure summaries', () => {
+  const text = buildRunCompletionOverview({
+    query: 'entry level analyst',
+    status: 'completed',
+    jobs: [
+      {
+        id: 1,
+        title: 'Data Analyst',
+        company: 'Acme',
+        status: 'applied',
+        stage: 'applied',
+        applyHost: 'jobs.lever.co'
+      },
+      {
+        id: 2,
+        title: 'BI Analyst',
+        company: 'Beta',
+        status: 'failed',
+        stage: 'failed',
+        failReason: 'Login is required before applying.',
+        applyHost: 'beta.wd1.myworkdayjobs.com'
+      },
+      {
+        id: 3,
+        title: 'ML Engineer',
+        company: 'Gamma',
+        status: 'skipped',
+        stage: 'skipped',
+        skipReason: 'No direct external apply URL extracted from the listing'
+      }
+    ]
+  });
+
+  assert.match(text, /Jobs found: 3/);
+  assert.match(text, /Lever: found 1, applied 1, failed 0, skipped 0/);
+  assert.match(text, /Workday: found 1, applied 0, failed 1, skipped 0/);
+  assert.match(text, /Top failure causes:/);
+  assert.match(text, /Top skip causes:/);
 });

@@ -140,6 +140,7 @@ Each autorun now writes:
 - a machine-readable JSON run file in `runs`
 - a human-readable summary file next to it as `*.summary.txt`
 - stage-specific totals plus skip buckets, including postings skipped for being older than the configured time window
+- a richer end-of-run summary grouped by board/apply host, plus top failure and skip reasons
 
 The unattended workflow order is:
 
@@ -188,6 +189,7 @@ You can verify the shortcut status any time with:
 - If you enable `requireOpenAITailoring`, that conservative fallback is no longer accepted for unattended applying. The run will fail that job instead of applying with a non-OpenAI-tailored resume.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
 - Resume upload handling now includes hidden file inputs, which improves compatibility with ATSes like Lever that wrap the real upload control behind a styled button.
+- Workday flows now try to steer toward guest/manual apply paths before falling back to login-required handling, and `incomplete` failures now include visible validation clues when available.
 - Unattended runs work best with direct ATS/company URLs. LinkedIn Easy Apply is skipped in unattended mode; LinkedIn is treated as a discovery source unless JobPilot can extract a direct external apply link.
 - Redirector-style hosts such as `jobright.ai`, `appcast`, `remotehunter`, `jobsyn`, and similar non-ATS apply wrappers are now treated as aggregator surfaces and skipped in unattended mode.
 - If an apply host requires login, extra verification, or repeatedly stalls as `incomplete`, standalone autorun now skips the rest of that host for the current run instead of wasting more attempts.

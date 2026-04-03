@@ -22,6 +22,20 @@ function normalizeLabel(value) {
   return normalizeWhitespace(value).toLowerCase();
 }
 
+function isWorkdayUrl(url = '') {
+  const normalized = String(url ?? '').toLowerCase();
+  return (
+    normalized.includes('myworkdayjobs.com') ||
+    normalized.includes('myworkdaysite.com') ||
+    normalized.includes('workdayjobs.com') ||
+    normalized.includes('/candidateexperience/')
+  );
+}
+
+function escapeRegExp(value) {
+  return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function buildCoverLetter(profile, job, resumeText) {
   const summary = normalizeWhitespace(
     resumeText
@@ -112,17 +126,36 @@ async function scanFields(page) {
     };
 
     let counter = 0;
-    const elements = [...document.querySelectorAll('input, textarea, select')];
+    const elements = [
+      ...document.querySelectorAll(
+        'input, textarea, select, [role="combobox"], button[aria-haspopup="listbox"]'
+      )
+    ];
+    const seen = new Set();
     const fields = [];
 
     for (const element of elements) {
-      const type = (element.getAttribute('type') || element.tagName).toLowerCase();
+      if (seen.has(element)) {
+        continue;
+      }
+      seen.add(element);
+
+      const role = (element.getAttribute('role') || '').toLowerCase();
+      const type = (element.getAttribute('type') || role || element.tagName).toLowerCase();
       const isFileInput = type === 'file';
       if (!isFileInput && !isVisible(element)) {
         continue;
       }
 
-      if (!isFileInput && ['hidden', 'submit', 'button', 'image', 'reset'].includes(type)) {
+      const isComboButton =
+        element.tagName.toLowerCase() === 'button' &&
+        element.getAttribute('aria-haspopup') === 'listbox';
+
+      if (
+        !isFileInput &&
+        !isComboButton &&
+        ['hidden', 'submit', 'button', 'image', 'reset'].includes(type)
+      ) {
         continue;
       }
 
@@ -137,7 +170,7 @@ async function scanFields(page) {
 
       fields.push({
         jobpilotId: element.dataset.jobpilotId,
-        tag: element.tagName.toLowerCase(),
+        tag: role || element.tagName.toLowerCase(),
         type,
         name: element.getAttribute('name') || '',
         label: labelForElement(element),
@@ -184,6 +217,13 @@ function inferFieldAnswer(field, ctx) {
 
   if (/resume|cv|upload/.test(key) && field.type === 'file') {
     return { kind: 'file', value: ctx.resumePath };
+  }
+
+  if (/how did you hear|referral source|source/.test(key)) {
+    return {
+      kind: field.tag === 'select' || field.tag === 'combobox' ? 'select' : 'text',
+      value: 'LinkedIn'
+    };
   }
 
   if (/cover letter|motivation|why are you interested/.test(key)) {
@@ -298,11 +338,73 @@ function inferFieldAnswer(field, ctx) {
       value: profile.eeo?.disabilityStatus || ''
     };
   }
+  if (/terms|conditions|privacy|consent|certif|acknowledg|authorize/.test(key)) {
+    return { kind: 'boolean', value: true };
+  }
   if (/years.*experience|experience.*years/.test(key)) {
     return { kind: 'text', value: String(ctx.yearsExperience) };
   }
 
   return null;
+}
+
+async function choosePopupOption(page, desiredValue) {
+  if (!desiredValue) {
+    return false;
+  }
+
+  const escaped = escapeRegExp(desiredValue);
+  const optionLocators = [
+    page.getByRole('option', { name: new RegExp(`^${escaped}$`, 'i') }).first(),
+    page.getByRole('option', { name: new RegExp(escaped, 'i') }).first(),
+    page.getByRole('listitem', { name: new RegExp(escaped, 'i') }).first(),
+    page.locator(`[role="option"]:has-text("${desiredValue}")`).first(),
+    page.locator(`text=/${escaped}/i`).first()
+  ];
+
+  for (const option of optionLocators) {
+    try {
+      if (await option.isVisible({ timeout: 500 })) {
+        await option.click({ timeout: 2000 });
+        return true;
+      }
+    } catch {
+      // Keep trying candidates.
+    }
+  }
+
+  return false;
+}
+
+async function fillCustomCombobox(page, locator, answerValue) {
+  const stringValue = String(answerValue ?? '').trim();
+  if (!stringValue) {
+    return false;
+  }
+
+  try {
+    await locator.click({ timeout: 2000 });
+  } catch {
+    return false;
+  }
+
+  await page.waitForTimeout(500);
+  const nestedEditable = locator.locator('input, textarea').first();
+  if (await nestedEditable.isVisible({ timeout: 400 }).catch(() => false)) {
+    await nestedEditable.fill(stringValue).catch(() => {});
+    await page.waitForTimeout(500);
+  } else {
+    await page.keyboard.type(stringValue).catch(() => {});
+    await page.waitForTimeout(500);
+  }
+
+  if (await choosePopupOption(page, stringValue)) {
+    return true;
+  }
+
+  await page.keyboard.press('ArrowDown').catch(() => {});
+  await page.keyboard.press('Enter').catch(() => {});
+  return true;
 }
 
 async function fillField(page, field, answer) {
@@ -332,6 +434,14 @@ async function fillField(page, field, answer) {
       }
       return true;
     }
+
+    if (field.tag === 'combobox') {
+      return fillCustomCombobox(page, locator, answer.value ? 'Yes' : 'No');
+    }
+  }
+
+  if (field.tag === 'combobox') {
+    return fillCustomCombobox(page, locator, answer.value);
   }
 
   if (field.tag === 'select' || answer.kind === 'select') {
@@ -340,6 +450,11 @@ async function fillField(page, field, answer) {
       await locator.selectOption(optionValue);
       return true;
     }
+
+    if (answer.kind === 'select') {
+      return fillCustomCombobox(page, locator, answer.value);
+    }
+
     return false;
   }
 
@@ -390,6 +505,63 @@ async function ensureApplicationForm(page) {
   if (clicked) {
     await page.waitForTimeout(2500);
   }
+
+  if (isWorkdayUrl(page.url())) {
+    const workdayChoices = [
+      'apply manually',
+      'continue as guest',
+      'continue without an account',
+      'skip autofill',
+      'start application'
+    ];
+
+    for (const label of workdayChoices) {
+      const handled = await tryClickByText(page, [label]);
+      if (handled) {
+        await page.waitForTimeout(1800);
+      }
+    }
+  }
+}
+
+async function extractValidationIssues(page) {
+  const issues = await page.evaluate(() => {
+    const isVisible = (element) => {
+      if (!element) {
+        return false;
+      }
+      const style = window.getComputedStyle(element);
+      if (style.display === 'none' || style.visibility === 'hidden') {
+        return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+
+    const texts = new Set();
+    const candidates = [
+      ...document.querySelectorAll(
+        '[aria-invalid="true"], [role="alert"], [data-automation-id*="error"], .error, .invalid, .field-error'
+      )
+    ];
+
+    for (const candidate of candidates) {
+      if (!isVisible(candidate)) {
+        continue;
+      }
+
+      const text = (candidate.innerText || candidate.textContent || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (text) {
+        texts.add(text);
+      }
+    }
+
+    return [...texts].slice(0, 6);
+  });
+
+  return issues;
 }
 
 export async function applyToJob({
@@ -464,6 +636,29 @@ export async function applyToJob({
     }
 
     await ensureApplicationForm(page);
+
+    if (await detectLoginPage(page)) {
+      const loggedIn = await attemptLogin(page, getCredentialForUrl(profile, page.url()));
+      await page.waitForTimeout(2000);
+      if (await detectLoginPage(page)) {
+        if (!allowManualPrompt) {
+          return {
+            status: loggedIn ? 'verification-required' : 'login-required',
+            job: jobDetails,
+            filledFields: [],
+            resumePath: '',
+            failReason: loggedIn
+              ? 'Additional verification is required before applying.'
+              : 'Login is still required after opening the application flow.'
+          };
+        }
+
+        await promptForManualStep(
+          'Login is still required before the application can continue.',
+          { allowPrompt: allowManualPrompt }
+        );
+      }
+    }
 
     const extracted = await extractJobDetailsFromPage(page);
     jobDetails = {
@@ -607,11 +802,17 @@ export async function applyToJob({
       await page.waitForTimeout(2500);
     }
 
+    const validationIssues = await extractValidationIssues(page);
+    const incompleteReason = validationIssues.length
+      ? `The application flow stalled before reaching a submit-ready state. Visible validation issues: ${validationIssues.join(' | ')}`
+      : `The application flow stalled before reaching a submit-ready state on ${page.url()}.`;
+
     return {
       status: 'incomplete',
       job: jobDetails,
       filledFields,
-      resumePath: effectiveResumePath
+      resumePath: effectiveResumePath,
+      failReason: incompleteReason
     };
   } finally {
     if (ownsContext) {
