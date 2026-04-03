@@ -242,6 +242,7 @@ if ($defaultResume) {
 }
 
 $openAIEnabled = [bool](Get-Value -Root $profile -Path @("openai", "enabled"))
+$standaloneRequireOpenAITailoring = [bool](Get-Value -Root $profile -Path @("standalone", "requireOpenAITailoring"))
 if ($openAIEnabled) {
   $apiKeyEnvVar = Get-Value -Root $profile -Path @("openai", "apiKeyEnvVar")
   if ([string]::IsNullOrWhiteSpace([string]$apiKeyEnvVar)) {
@@ -271,6 +272,16 @@ if ($openAIEnabled) {
   Add-Result "OK" "openai.model" "OpenAI tailoring model is set to $openAIModel."
 } elseif ($null -ne (Get-Value -Root $profile -Path @("openai"))) {
   Add-Result "WARN" "openai.enabled" "OpenAI tailoring is configured but disabled."
+}
+
+if ($standaloneRequireOpenAITailoring) {
+  if (-not $openAIEnabled) {
+    Add-Result "ERROR" "standalone.requireOpenAITailoring" "standalone.requireOpenAITailoring is true but openai.enabled is false."
+  } elseif ([string]::IsNullOrWhiteSpace($apiKeyValue)) {
+    Add-Result "ERROR" "standalone.requireOpenAITailoring" "standalone.requireOpenAITailoring is true but the OpenAI API key is missing."
+  } else {
+    Add-Result "OK" "standalone.requireOpenAITailoring" "Standalone runs will require successful OpenAI tailoring before applying."
+  }
 }
 
 $overleafEnabled = [bool](Get-Value -Root $profile -Path @("overleaf", "enabled"))

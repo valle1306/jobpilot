@@ -107,6 +107,7 @@ Current `standalone` config supports:
 - `entryLevelMaxYears`: skip roles that explicitly ask for more than this many years of experience
 - `preferredLocations`: preferred locations for filtering; use `["Anywhere"]` or `[]` to disable location filtering
 - `requireDirectApply`: when `true`, unattended runs skip bare aggregator listings like LinkedIn pages unless a direct ATS/company apply URL was extracted
+- `requireOpenAITailoring`: when `true`, standalone apply and autorun stop before applying if OpenAI tailoring does not succeed and produce a tailored PDF
 - `preferredAtsDomains`: optional ATS hosts to prioritize in `direct-ats-first` mode
 - `skipTitleKeywords`: extra blocked title keywords
 - `maxApplicationsPerRun`: set to `0` to apply all currently qualified matches in the run
@@ -147,6 +148,7 @@ You can verify the shortcut status any time with:
 - Search is best-effort and still needs adapter tuning per board.
 - The current standalone defaults disable `Indeed` and `Hiring Cafe` because both are frequently blocked by anti-bot challenges in unattended mode.
 - Tailoring in standalone mode can now use OpenAI for JD-aware bullet rewrites, but it still validates edits aggressively and falls back to the conservative path if an edit looks unsafe.
+- If you enable `requireOpenAITailoring`, that conservative fallback is no longer accepted for unattended applying. The run will fail that job instead of applying with a non-OpenAI-tailored resume.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
 - Unattended runs work best with direct ATS/company URLs. Aggregator-only pages like LinkedIn are now treated as discovery sources unless JobPilot can extract a direct apply link.
 - If Overleaf still triggers a one-time verification step, run `.\scripts\overleaf-login-bootstrap.ps1` first so the persistent browser session is ready before autorun starts.

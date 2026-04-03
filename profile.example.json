@@ -164,6 +164,7 @@
     "entryLevelMaxYears": 3,
     "preferredLocations": ["Anywhere"],
     "requireDirectApply": true,
+    "requireOpenAITailoring": false,
     "preferredAtsDomains": [
       "greenhouse.io",
       "lever.co",

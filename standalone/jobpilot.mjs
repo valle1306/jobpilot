@@ -250,6 +250,8 @@ async function commandApply(input, flags) {
   const { profile } = await loadProfile();
   const { text: resumeText } = await readResumeText(profile);
   const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
+  const standaloneConfig = profile.standalone ?? {};
+  const requireOpenAITailoring = resolveRequireOpenAITailoring(profile, standaloneConfig, flags);
 
   try {
     const job = await loadJobFromInput(context, input);
@@ -262,6 +264,10 @@ async function commandApply(input, flags) {
         downloadPdf: true,
         context
       });
+      const tailoringCheck = validateTailoringForApply(tailored, requireOpenAITailoring);
+      if (!tailoringCheck.ok) {
+        throw new Error(tailoringCheck.message);
+      }
       tailoredResumePath = tailored.tailoredResumePath;
     }
 
@@ -423,6 +429,54 @@ function resolvePreferredAtsDomains(standaloneConfig = {}) {
     'myworkdaysite.com',
     'workdayjobs.com'
   ];
+}
+
+function resolveRequireOpenAITailoring(profile = {}, standaloneConfig = {}, flags = {}) {
+  if (typeof flags['require-openai-tailoring'] === 'boolean') {
+    return Boolean(flags['require-openai-tailoring']);
+  }
+
+  if (typeof standaloneConfig.requireOpenAITailoring === 'boolean') {
+    return standaloneConfig.requireOpenAITailoring;
+  }
+
+  return false;
+}
+
+function validateTailoringForApply(tailored, requireOpenAITailoring = false) {
+  if (!tailored) {
+    return {
+      ok: false,
+      message: 'Resume tailoring did not return a result.'
+    };
+  }
+
+  if (!tailored.tailoredResumePath) {
+    return {
+      ok: false,
+      message: 'Resume tailoring did not produce a PDF.'
+    };
+  }
+
+  if (!requireOpenAITailoring) {
+    return {
+      ok: true,
+      message: ''
+    };
+  }
+
+  if (tailored.tailoringMethod !== 'openai') {
+    const warning = tailored.tailoringWarning ? ` ${tailored.tailoringWarning}` : '';
+    return {
+      ok: false,
+      message: `OpenAI tailoring is required for this run, but the result used ${tailored.tailoringMethod}.${warning}`.trim()
+    };
+  }
+
+  return {
+    ok: true,
+    message: ''
+  };
 }
 
 function rankSearchResults(jobs, rawSearchMode = 'balanced', preferredDomains = []) {
@@ -711,6 +765,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   const requireDirectApply = resolveRequireDirectApply(standaloneConfig, flags);
   const searchMode = resolveSearchMode(flags['search-mode'] ?? standaloneConfig.searchMode);
   const preferredAtsDomains = resolvePreferredAtsDomains(standaloneConfig);
+  const requireOpenAITailoring = resolveRequireOpenAITailoring(profile, standaloneConfig, flags);
 
   const { runPath, run } = await createRunFile(runQuery, {
     minMatchScore,
@@ -720,7 +775,8 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     allowManualPrompt,
     requireDirectApply,
     searchMode,
-    preferredAtsDomains
+    preferredAtsDomains,
+    requireOpenAITailoring
   });
 
   try {
@@ -833,6 +889,10 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
             context,
             allowManualPrompt
           });
+          const tailoringCheck = validateTailoringForApply(tailored, requireOpenAITailoring);
+          if (!tailoringCheck.ok) {
+            throw new Error(tailoringCheck.message);
+          }
           tailoredResumePath = tailored.tailoredResumePath;
           console.log(
             `  Tailor complete: ${tailored.roleType}, ${tailored.addedKeywords.length} keyword updates, ${tailored.tailoringMethod}${tailored.modelUsed ? ` (${tailored.modelUsed})` : ''}`
@@ -843,6 +903,10 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
         } catch (error) {
           job.tailorWarning = error.message;
           console.log(`  Tailor warning: ${error.message}`);
+          job.status = 'failed';
+          job.failReason = error.message;
+          await saveRun(runPath, run);
+          continue;
         }
       }
 
@@ -926,7 +990,8 @@ async function commandAutorun() {
     file: standaloneConfig.mode === 'file' ? standaloneConfig.filePath : '',
     resume: standaloneConfig.resumePath ?? '',
     'search-limit': standaloneConfig.searchLimitPerQuery ?? '',
-    'search-mode': standaloneConfig.searchMode ?? ''
+    'search-mode': standaloneConfig.searchMode ?? '',
+    'require-openai-tailoring': standaloneConfig.requireOpenAITailoring ?? ''
   };
 
   await runAutopilot(profile, query, flags, standaloneConfig);
