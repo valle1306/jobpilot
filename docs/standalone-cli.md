@@ -101,7 +101,7 @@ Current `standalone` config supports:
 - `query`: default search query
 - `queries`: optional list of default search queries for autorun; useful for adjacent roles like data analyst and product analyst
 - `filePath`: URL list for file-driven batches
-- `headless`: run the browser headlessly
+- `headless`: run the browser headlessly; set this to `false` if you want to watch Playwright drive the browser live
 - `autoApprove`: skip batch confirmation
 - `autoSubmit`: submit application forms automatically
 - `runLoopMode`: currently `one-pass`; autorun searches once, processes the current batch, and exits with a summary
@@ -166,7 +166,7 @@ You can verify the shortcut status any time with:
 
 - Search is best-effort and still needs adapter tuning per board.
 - The current standalone defaults disable `Indeed` and `Hiring Cafe` because both are frequently blocked by anti-bot challenges in unattended mode.
-- Tailoring in standalone mode can now use OpenAI for JD-aware bullet rewrites, but it still validates edits aggressively and falls back to the conservative path if an edit looks unsafe.
+- Tailoring in standalone mode can now use OpenAI for JD-aware bullet rewrites, but it still validates edits aggressively. If OpenAI makes no accepted safe bullet edits, JobPilot now keeps the existing one-page resume content and still records the result as an OpenAI tailoring success instead of forcing a heuristic fallback.
 - If you enable `requireOpenAITailoring`, that conservative fallback is no longer accepted for unattended applying. The run will fail that job instead of applying with a non-OpenAI-tailored resume.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
 - Unattended runs work best with direct ATS/company URLs. LinkedIn Easy Apply is skipped in unattended mode; LinkedIn is treated as a discovery source unless JobPilot can extract a direct external apply link.

@@ -89,8 +89,10 @@ If the search boards show authwalls, Cloudflare, or other anti-bot pages, seed t
 
 To enable OpenAI-powered JD-aware resume tailoring in the standalone flow, set `OPENAI_API_KEY` in your environment or `.env`, then enable the `openai` block in `profile.json`. For standalone runs in this repo, `.env` now takes precedence over stale inherited Windows environment variables.
 If you want the shortcut to behave more like the original Claude-powered flow, set `standalone.requireOpenAITailoring` to `true` so JobPilot refuses to apply when OpenAI tailoring fails or falls back.
+If you want to watch the browser work live, set `standalone.headless` to `false` in `profile.json`.
 
 Unattended runs now follow this order: discover jobs -> tailor with OpenAI -> compile/download the one-page Overleaf PDF -> upload the PDF into the ATS/company form -> submit -> record the result.
+When OpenAI keeps the resume unchanged because no safe one-page bullet edits are needed, that now counts as a valid OpenAI tailoring result instead of forcing a heuristic fallback.
 LinkedIn is treated as a discovery source in unattended mode. Aggregator pages like LinkedIn are skipped unless JobPilot can extract a direct external apply link.
 The current standalone defaults also disable `Indeed` and `Hiring Cafe` because both are frequently blocked in unattended browser sessions, and use `direct-ats-first` ranking so Greenhouse, Lever, and Workday-style apply links are prioritized.
 Redirector-style hosts such as `jobright.ai`, `appcast`, and similar non-ATS wrappers are also skipped in unattended mode, and repeated login/verification/incomplete failures on the same apply host are short-circuited for the rest of the run.

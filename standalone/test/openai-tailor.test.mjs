@@ -57,29 +57,51 @@ test('applyTailoringPlan only applies safe edits', () => {
   assert.ok(result.addedKeywords.includes('retention'));
 });
 
-test('applyTailoringPlan rejects unsafe structural edits', () => {
+test('applyTailoringPlan drops unsafe structural edits and keeps original resume content', () => {
   const bullets = extractCandidateBullets(sampleTex);
+  const result = applyTailoringPlan({
+    texContent: sampleTex,
+    bullets,
+    config: {
+      maxBulletsPerEntry: 2,
+      maxExtraCharsPerBullet: 36,
+      maxTotalAddedChars: 120
+    },
+    plan: {
+      summary: 'Bad edit',
+      bullet_edits: [
+        {
+          bullet_id: bullets[0].id,
+          replacement_line: '\\section{Hacked}',
+          reason: 'Unsafe',
+          keywords_added: []
+        }
+      ]
+    }
+  });
 
-  assert.throws(() =>
-    applyTailoringPlan({
-      texContent: sampleTex,
-      bullets,
-      config: {
-        maxBulletsPerEntry: 2,
-        maxExtraCharsPerBullet: 36,
-        maxTotalAddedChars: 120
-      },
-      plan: {
-        summary: 'Bad edit',
-        bullet_edits: [
-          {
-            bullet_id: bullets[0].id,
-            replacement_line: '\\section{Hacked}',
-            reason: 'Unsafe',
-            keywords_added: []
-          }
-        ]
-      }
-    })
-  );
+  assert.equal(result.acceptedEdits.length, 0);
+  assert.equal(result.texContent, sampleTex);
+  assert.match(result.warning, /keeping the existing resume content/i);
+});
+
+test('applyTailoringPlan treats an empty OpenAI edit plan as a valid no-op', () => {
+  const bullets = extractCandidateBullets(sampleTex);
+  const result = applyTailoringPlan({
+    texContent: sampleTex,
+    bullets,
+    config: {
+      maxBulletsPerEntry: 2,
+      maxExtraCharsPerBullet: 36,
+      maxTotalAddedChars: 120
+    },
+    plan: {
+      summary: 'Resume already aligns well with the role.',
+      bullet_edits: []
+    }
+  });
+
+  assert.equal(result.acceptedEdits.length, 0);
+  assert.equal(result.texContent, sampleTex);
+  assert.match(result.warning, /keeping the existing resume content/i);
 });

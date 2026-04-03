@@ -156,7 +156,7 @@
       "early career machine learning engineer"
     ],
     "filePath": "./jobs-to-apply.txt",
-    "headless": true,
+    "headless": false,
     "autoApprove": true,
     "autoSubmit": true,
     "runLoopMode": "one-pass",

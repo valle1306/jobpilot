@@ -375,17 +375,17 @@ export function applyTailoringPlan({ texContent, bullets, plan, config }) {
     totalAddedChars += Math.max(0, delta);
   }
 
-  if (acceptedEdits.length === 0) {
-    throw new Error('OpenAI tailoring did not produce any safe bullet edits.');
-  }
-
   return {
     texContent: lines.join('\n'),
     acceptedEdits,
     addedKeywords: uniqueBy(
       acceptedEdits.flatMap((edit) => edit.keywordsAdded),
       (value) => value.toLowerCase()
-    )
+    ),
+    warning:
+      acceptedEdits.length === 0
+        ? 'OpenAI produced no accepted safe bullet edits; keeping the existing resume content.'
+        : ''
   };
 }
 
@@ -432,6 +432,7 @@ export async function tailorResumeWithOpenAI({ profile, job, texContent, roleTyp
     addedKeywords: applied.addedKeywords,
     summary: normalizeWhitespace(plan.summary),
     acceptedEdits: applied.acceptedEdits,
+    warning: applied.warning,
     model: config.model,
     method: 'openai'
   };

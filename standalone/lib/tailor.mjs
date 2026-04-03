@@ -417,6 +417,7 @@ export async function tailorJob({
       modelUsed = tailoredByModel.model;
       tailoringSummary = tailoredByModel.summary;
       acceptedEdits = tailoredByModel.acceptedEdits;
+      tailoringWarning = tailoredByModel.warning || '';
     } catch (error) {
       tailoringWarning = error.message;
     }
