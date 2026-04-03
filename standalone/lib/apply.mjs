@@ -10,6 +10,7 @@ import {
   attemptLogin,
   detectHumanChallenge,
   detectLoginPage,
+  detectRegistrationPage,
   gotoAndSettle,
   launchBrowserContext,
   promptForManualStep,
@@ -253,6 +254,19 @@ function inferFieldAnswer(field, ctx) {
 
   if (/cover letter|motivation|why are you interested/.test(key)) {
     return { kind: 'text', value: ctx.coverLetter };
+  }
+
+  if (/confirm email|re-enter email|email confirmation/.test(key)) {
+    return { kind: 'text', value: ctx.accountEmail || profile.personal.email };
+  }
+  if (/username|user name/.test(key) && !/github|linkedin/.test(key)) {
+    return { kind: 'text', value: ctx.accountEmail || profile.personal.email };
+  }
+  if (/confirm password|re-enter password|repeat password|password confirmation/.test(key)) {
+    return { kind: 'text', value: ctx.accountPassword || '' };
+  }
+  if (/password/.test(key) && !/current password|old password/.test(key)) {
+    return { kind: 'text', value: ctx.accountPassword || '' };
   }
 
   if (/first name|given name/.test(key)) {
@@ -500,7 +514,19 @@ async function detectSuccess(page) {
 async function chooseAction(page) {
   const actions = [
     { kind: 'submit', texts: ['submit application', 'submit', 'finish application'] },
-    { kind: 'next', texts: ['next', 'continue', 'save and continue', 'review'] }
+    {
+      kind: 'next',
+      texts: [
+        'register',
+        'create account',
+        'continue application',
+        'continue to application',
+        'next',
+        'continue',
+        'save and continue',
+        'review'
+      ]
+    }
   ];
 
   for (const action of actions) {
@@ -818,6 +844,7 @@ export async function applyToJob({
     const page = await browserContext.newPage();
     const targetUrl = resolveEffectiveApplyUrl(job) || url;
     const applyHost = getUrlHostname(targetUrl);
+    const applicationCredentials = getCredentialForUrl(profile, targetUrl);
     const codexAssistConfig = resolveCodexApplyConfig(profile);
     const useCodexAssist = shouldUseCodexApplyAssist(targetUrl, profile);
     let codexAssistRounds = 0;
@@ -858,11 +885,12 @@ export async function applyToJob({
       }
     }
 
-    let loginRequired = await detectLoginPage(page);
+    const onRegistrationPageInitially = await detectRegistrationPage(page);
+    let loginRequired = onRegistrationPageInitially ? false : await detectLoginPage(page);
     if (loginRequired && (useCodexAssist || isWorkdayUrl(page.url()))) {
       await ensureApplicationForm(page);
       await page.waitForTimeout(1200);
-      loginRequired = await detectLoginPage(page);
+      loginRequired = (await detectRegistrationPage(page)) ? false : await detectLoginPage(page);
     }
 
     if (loginRequired) {
@@ -891,10 +919,10 @@ export async function applyToJob({
 
     await ensureApplicationForm(page);
 
-    if (await detectLoginPage(page)) {
+    if (!(await detectRegistrationPage(page)) && (await detectLoginPage(page))) {
       const loggedIn = await attemptLogin(page, getCredentialForUrl(profile, page.url()));
       await page.waitForTimeout(2000);
-      if (await detectLoginPage(page)) {
+      if (!(await detectRegistrationPage(page)) && (await detectLoginPage(page))) {
         if (!allowManualPrompt) {
           return {
             status: loggedIn ? 'verification-required' : 'login-required',
@@ -976,6 +1004,8 @@ export async function applyToJob({
           yearsExperience,
           resumePath: effectiveResumePath,
           coverLetter,
+          accountEmail: applicationCredentials?.email || profile.personal.email,
+          accountPassword: applicationCredentials?.password || '',
           jobLocation: jobDetails.location || job.location || '',
           preferredLocation:
             profile.workAuthorization?.preferredLocations?.[0] ??

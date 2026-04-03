@@ -69,7 +69,40 @@ export async function tryClickByText(page, texts) {
   return false;
 }
 
+export async function detectRegistrationPage(page) {
+  const url = page.url().toLowerCase();
+  if (
+    url.includes('/account/register') ||
+    url.includes('/register?') ||
+    url.includes('/register/') ||
+    url.includes('create-account') ||
+    url.includes('createaccount') ||
+    url.includes('/signup') ||
+    url.includes('sign-up') ||
+    url.includes('candidate/register')
+  ) {
+    return true;
+  }
+
+  const bodyText = (await page.locator('body').innerText().catch(() => ''))
+    .toLowerCase()
+    .slice(0, 5000);
+
+  return (
+    bodyText.includes('create an account') ||
+    bodyText.includes('create account') ||
+    bodyText.includes('register to apply') ||
+    bodyText.includes('register to continue') ||
+    bodyText.includes('already have an account') ||
+    bodyText.includes('confirm password')
+  );
+}
+
 export async function detectLoginPage(page) {
+  if (await detectRegistrationPage(page)) {
+    return false;
+  }
+
   const url = page.url().toLowerCase();
   if (
     /\/(login|log-in|signin|sign-in)(\/|$|\?)/i.test(url) ||

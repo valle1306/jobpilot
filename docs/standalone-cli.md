@@ -195,6 +195,7 @@ You can verify the shortcut status any time with:
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
 - Resume upload handling now includes hidden file inputs, which improves compatibility with ATSes like Lever that wrap the real upload control behind a styled button.
 - Workday flows now try to steer toward guest/manual apply paths before falling back to login-required handling, and `incomplete` failures now include visible validation clues when available.
+- If an ATS forces account creation before applying, standalone mode now keeps that page in the normal form-filling path and uses your configured application password from `credentials.default.password` unless a board-specific credential override exists.
 - Unattended runs work best with direct ATS/company URLs. LinkedIn Easy Apply is skipped in unattended mode; LinkedIn is treated as a discovery source unless JobPilot can extract a direct external apply link.
 - Redirector-style hosts such as `jobright.ai`, `appcast`, `remotehunter`, `jobsyn`, and similar non-ATS apply wrappers are now treated as aggregator surfaces and skipped in unattended mode.
 - If an apply host requires login, extra verification, or repeatedly stalls as `incomplete`, standalone autorun now skips the rest of that host for the current run instead of wasting more attempts.
