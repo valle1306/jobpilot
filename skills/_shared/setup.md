@@ -46,7 +46,10 @@ When a skill needs Overleaf settings, read from profile.json:
 - `overleaf.localClonePath` — path to local git clone of Overleaf project
 - `overleaf.texFiles` — map of role type to .tex filename
 - `overleaf.tailoredOutputDir` — where to save tailored PDFs
-- `overleaf.gitUsername` / `overleaf.gitPassword` — Overleaf credentials
+- `overleaf.gitToken` — Overleaf Git Bridge token (the Git username is always `git`)
+- `overleaf.email` — Overleaf account email for website login
+
+Overleaf normally compiles main.tex. When tailoring a role-specific template, copy the selected .tex content into main.tex before pushing so the downloaded PDF matches the chosen variant.
 
 ## Role Classification
 
@@ -59,3 +62,4 @@ Given a job title and description, return one of: `product-ds`, `ml-ds`, or `gen
 - **general-ds**: all other data science, statistics, or quantitative roles
 
 After classifying, look up `overleaf.texFiles.<roleType>` in profile.json for the .tex file to use.
+

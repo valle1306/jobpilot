@@ -23,6 +23,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that auto
 ### Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
+- Git (Git for Windows includes Git Bash)
 - [jq](https://jqlang.github.io/jq/download/) is required by utility scripts (auto-installed on first run if missing)
 
 ### 1. Install
@@ -43,6 +44,30 @@ cp profile.example.json profile.json
 ```
 
 Edit `profile.json` with your personal info, resume path, credentials, and job board config. See [Configuration](docs/configuration.md) for the full reference.
+
+On Windows PowerShell, run a local setup check with:
+
+```powershell
+.\scripts\check-setup.ps1
+```
+
+If `bash` is not on your PATH, run shell scripts through the wrapper:
+
+```powershell
+.\scripts\run-bash.ps1 scripts\overleaf-clone.sh
+```
+
+For Overleaf setup on Windows, you can also use the native PowerShell script:
+
+```powershell
+.\scripts\overleaf-clone.ps1
+```
+
+To run the full Overleaf bootstrap on Windows without Claude-specific commands:
+
+```powershell
+.\scripts\overleaf-bootstrap.ps1
+```
 
 ### 3. Allow browser permissions (recommended)
 
@@ -102,6 +127,7 @@ Add to `.claude/settings.json`:
 
 - [Configuration](docs/configuration.md) - profile setup, job boards, autopilot settings, work authorization, EEO
 - [How It Works](docs/how-it-works.md) - architecture, skill details, project structure
+- [Standalone CLI](docs/standalone-cli.md) - run search, tailor, apply, and autopilot without Claude skills
 
 ## Credits
 

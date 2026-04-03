@@ -7,57 +7,53 @@ This guide walks you through connecting JobPilot to your Overleaf project so res
 - An **Overleaf Premium** account (Git Bridge is a Premium feature)
 - Your two LaTeX resume files (`productds.tex` and `DS_ML.tex`) already uploaded to an Overleaf project
 - Git installed locally
-
----
+- On Windows: Git for Windows is recommended so you have Git Bash available
 
 ## Step 1: Find Your Overleaf Project ID
 
-1. Open your resume project in Overleaf
-2. Look at the URL in your browser — it will look like:
+1. Open your resume project in Overleaf.
+2. Look at the URL in your browser. It will look like:
    ```
    https://www.overleaf.com/project/64a3f2c1b8e9d70012abc123
    ```
-3. The long alphanumeric string at the end is your **project ID**
-4. Copy it — you will need it in Step 4
-
----
+3. The long alphanumeric string at the end is your **project ID**.
+4. Copy it. You will need it in Step 4.
 
 ## Step 2: Enable Git Bridge in Overleaf
 
-1. With your project open, click the **Menu** button (top-left hamburger icon)
-2. Scroll down to find **Git** under the "Sync" section
-3. If you see a "Git" option, click it — Overleaf will show you the clone URL:
+1. With your project open, click the **Menu** button.
+2. Scroll down to find **Git** under the "Sync" section.
+3. If you see a "Git" option, click it. Overleaf will show you the clone URL:
    ```
    https://git.overleaf.com/YOUR_PROJECT_ID
    ```
-4. If you do not see Git in the menu, your account may not have Premium. Upgrade at `overleaf.com/user/subscription`
+4. If you do not see Git in the menu, your account may not have Premium. Upgrade at `overleaf.com/user/subscription`.
 
-Alternatively, enable via Account Settings:
-1. Go to `overleaf.com/user/settings`
-2. Navigate to the **Integrations** or **Git** tab
-3. Confirm Git Bridge is active for your account
+Alternatively:
 
----
+1. Go to `overleaf.com/user/settings`.
+2. Open the **Integrations** or **Git** tab.
+3. Confirm Git Bridge is active for your account.
 
-## Step 3: Get Your Overleaf Token
+## Step 3: Generate an Overleaf Git Token
 
-Overleaf supports token-based authentication for Git. To generate a token:
+Overleaf Git Bridge now requires a **Git authentication token**. A regular Overleaf password may still work for website login, but it is not enough for Git clone, pull, or push.
 
-1. Go to `overleaf.com/user/settings`
-2. Scroll to the **Password** section — for Git authentication you use your **Overleaf account password** directly, OR
-3. If your institution uses SSO (single sign-on), generate a Git token:
-   - Go to `overleaf.com/user/settings` → **Password** → **Set a password for Git access**
-   - Copy the generated token — it will not be shown again
+1. Go to `overleaf.com/user/settings`.
+2. Open the **Password** section.
+3. Generate or set a password/token for Git access.
+4. Copy it immediately. Overleaf may not show it again.
 
-Your Git credentials for Overleaf are:
-- **Username**: your Overleaf account email address
-- **Password**: your Overleaf password or the generated Git token
+Use these credentials for Git Bridge:
 
----
+- **Username**: `git`
+- **Git token**: the Git token/password generated for Git access
 
-## Step 4: Fill In profile.json
+If JobPilot needs to sign into the Overleaf website to download a compiled PDF, add your normal Overleaf account email as `overleaf.email` and optionally your normal website password as `overleaf.webPassword`.
 
-Open (or create) `profile.json` in the repo root and add the `overleaf` section. This file is gitignored — your credentials will never be committed.
+## Step 4: Fill In `profile.json`
+
+Open (or create) `profile.json` in the repo root and add the `overleaf` section. This file is gitignored, so your credentials stay local.
 
 ```json
 "overleaf": {
@@ -71,127 +67,144 @@ Open (or create) `profile.json` in the repo root and add the `overleaf` section.
     "general-ds": "productds.tex"
   },
   "tailoredOutputDir": "./resumes/tailored",
-  "gitUsername": "you@example.com",
-  "gitPassword": "your-overleaf-password-or-token",
+  "email": "you@example.com",
+  "gitToken": "your-overleaf-git-token",
+  "webPassword": "",
   "tailorResume": true
 }
 ```
 
 Replace:
+
 - `64a3f2c1b8e9d70012abc123` with your actual project ID from Step 1
 - `you@example.com` with your Overleaf account email
-- `your-overleaf-password-or-token` with the credential from Step 3
+- `your-overleaf-git-token` with the token from Step 3
+- `webPassword` with your normal Overleaf website password only if you want browser login automated
 
 Set `"enabled": false` if you want to disable Overleaf integration temporarily without removing the config.
 
----
-
-## Step 5: Run the One-Time Clone
+## Step 5: Run the Local Setup Check
 
 From the repo root, run:
 
+```powershell
+.\scripts\check-setup.ps1
+```
+
+This verifies:
+
+- `profile.json` is present and gitignored
+- your default resume path exists
+- Overleaf fields look complete
+- Git, bash, and jq are available (or at least detectable)
+
+## Step 6: Run the One-Time Clone
+
+From the repo root:
+
+On macOS/Linux:
+
 ```bash
 bash scripts/overleaf-clone.sh
 ```
 
-This clones your Overleaf project into the `./overleaf-resume/` directory. This directory is gitignored — it will not be committed to the JobPilot repo.
+On Windows PowerShell:
 
-You will be prompted for your Git credentials unless you have them cached. To cache credentials for the session:
-
-```bash
-git config --global credential.helper cache
+```powershell
+.\scripts\overleaf-clone.ps1
 ```
 
-Or store them permanently (less secure):
+This clones your Overleaf project into `./overleaf-resume/`. That directory is gitignored and stays local.
 
-```bash
-git config --global credential.helper store
+If you want the full Windows setup in one command, use:
+
+```powershell
+.\scripts\overleaf-bootstrap.ps1
 ```
 
----
+That script will:
 
-## Step 6: Verify the Setup
+- clone the Overleaf project if needed
+- copy your local resume templates into the clone using `personal.resumes` and `overleaf.texFiles`
+- copy `personal.resumes.default` into `main.tex`
+- commit and push the synced files back to Overleaf
 
-After cloning, verify everything is working:
 
-1. **Check that both .tex files are present:**
-   ```bash
-   ls overleaf-resume/
-   ```
-   You should see `productds.tex` and `DS_ML.tex` (and any other files in your Overleaf project).
+JobPilot expects the role-mapped template files in overleaf.texFiles to exist in this project. During tailoring, it copies the selected template content into main.tex before pushing so Overleaf compiles the right version.
 
-2. **Test a pull:**
-   ```bash
-   bash scripts/overleaf-pull.sh
-   ```
-   This should complete without errors.
+## Step 7: Verify the Setup
 
-3. **Check the tailored output directory exists:**
-   ```bash
-   ls resumes/tailored/
-   ```
-   If the directory does not exist, create it: `mkdir -p resumes/tailored`
+After cloning:
 
----
+1. Check that both `.tex` files are present in `overleaf-resume/`.
+2. Test a pull.
+
+On macOS/Linux:
+
+```bash
+bash scripts/overleaf-pull.sh
+```
+
+On Windows PowerShell:
+
+```powershell
+.\scripts\overleaf-pull.ps1
+```
+
+3. Check that `resumes/tailored/` exists.
 
 ## Troubleshooting
 
-### Authentication errors on clone or pull
+### Clone or pull returns 403 / token errors
 
-```
-fatal: Authentication failed for 'https://git.overleaf.com/...'
-```
+Example:
 
-- Double-check your `gitUsername` (must be your full Overleaf email) and `gitPassword` in profile.json
-- If using SSO, make sure you have set a Git-specific password in Overleaf account settings
-- Try authenticating manually: `git clone https://git.overleaf.com/YOUR_PROJECT_ID overleaf-resume-test`
-
-### Compilation errors / PDF not downloading
-
-- Open your Overleaf project in the browser and check if the project compiles successfully there first
-- Common causes: missing LaTeX packages, syntax errors introduced during tailoring
-- If tailoring introduces a compile error, JobPilot will fall back to the default (un-tailored) PDF and log a warning
-
-### Missing .tex files after clone
-
-- Confirm both `productds.tex` and `DS_ML.tex` exist in your Overleaf project
-- File names are case-sensitive — make sure the names in `texFiles` in profile.json exactly match the filenames in Overleaf
-- You can rename files inside Overleaf by right-clicking them in the file tree
-
-### Git Bridge not available in Menu
-
-- Git Bridge requires Overleaf Premium. Verify your subscription at `overleaf.com/user/subscription`
-- If you recently upgraded, try refreshing the project page
-
-### overleaf-resume/ directory already exists
-
-If you need to re-clone (e.g., after deleting the directory):
-
-```bash
-rm -rf overleaf-resume/
-bash scripts/overleaf-clone.sh
+```text
+remote: Overleaf now only supports Git authentication tokens to access git.
+fatal: unable to access 'https://git.overleaf.com/...': The requested URL returned error: 403
 ```
 
-### Rate limiting between pushes
+- Overleaf Git token auth uses the username `git`, not your email.
+- Make sure `overleaf.gitToken` is an Overleaf Git token, not your regular website password.
+- If your config still uses `overleaf.gitPassword`, migrate that value to `overleaf.gitToken`.
 
-JobPilot enforces a 30-second wait between Overleaf pushes during batch operations to avoid overwhelming the Git Bridge. If you see timeout errors, increase this delay in `scripts/overleaf-push.sh`.
+### PDF download reaches the login page
 
----
+- Add `overleaf.webPassword` if you want website login automated.
+- If you use SSO or do not want to store a website password, sign in manually when prompted.
+
+### Missing `.tex` files after clone
+
+- Confirm both `productds.tex` and `DS_ML.tex` exist in your Overleaf project.
+- If your project currently only has main.tex, either upload the role-specific .tex files or temporarily point all overleaf.texFiles.* entries to main.tex.
+
+### `bash` is not recognized in PowerShell
+
+Use:
+
+```powershell
+.\scripts\run-bash.ps1 scripts\overleaf-clone.sh
+```
+
+### `jq` was installed but still is not found
+
+Open a new terminal and run the command again. JobPilot's scripts also check the WinGet install path automatically now.
 
 ## File Layout After Setup
 
-```
+```text
 jobpilot/
-├── overleaf-resume/         # gitignored — local Overleaf clone
-│   ├── productds.tex
-│   └── DS_ML.tex
-├── resumes/
-│   └── tailored/            # gitignored — generated PDFs
-│       └── stripe-analytics-engineer-2026-04-03.pdf
-├── profile.json             # gitignored — your credentials live here
-└── scripts/
-    ├── overleaf-clone.sh
-    ├── overleaf-pull.sh
-    ├── overleaf-push.sh
-    └── overleaf-download-pdf.sh
+  overleaf-resume/         # gitignored - local Overleaf clone
+    productds.tex
+    DS_ML.tex
+  resumes/
+    tailored/              # gitignored - generated PDFs
+      stripe-analytics-engineer-2026-04-03.pdf
+  profile.json             # gitignored - your credentials live here
+  scripts/
+    overleaf-clone.sh
+    overleaf-pull.sh
+    overleaf-push.sh
+    overleaf-download-pdf.sh
 ```
+

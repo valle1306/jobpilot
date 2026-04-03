@@ -1,0 +1,16 @@
+{
+  "name": "jobpilot-standalone",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "jobpilot-standalone": "standalone/jobpilot.mjs"
+  },
+  "scripts": {
+    "standalone": "node standalone/jobpilot.mjs",
+    "test": "node --test standalone/test/*.test.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.54.2"
+  }
+}

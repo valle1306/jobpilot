@@ -2,7 +2,28 @@
 # Ensures jq is available. Installs it automatically if missing.
 # Source this file at the top of any script: source "$(dirname "$0")/_ensure-jq.sh"
 
-if command -v jq &>/dev/null; then
+_jobpilot_locate_jq() {
+  if command -v jq &>/dev/null; then
+    return 0
+  fi
+
+  # On Windows/MSYS, winget-installed jq may not be on PATH in the current shell.
+  # Check the known WinGet package location as a fallback and update PATH in-process.
+  local winget_dir="$HOME/AppData/Local/Microsoft/WinGet/Packages"
+  local winget_exe=""
+
+  if [ -d "$winget_dir" ]; then
+    winget_exe=$(find "$winget_dir" -name "jq.exe" 2>/dev/null | head -1)
+  fi
+
+  if [[ -n "$winget_exe" ]]; then
+    export PATH="$PATH:$(dirname "$winget_exe")"
+  fi
+
+  command -v jq &>/dev/null
+}
+
+if _jobpilot_locate_jq; then
   return 0 2>/dev/null || exit 0
 fi
 
@@ -51,8 +72,8 @@ case "$(uname -s)" in
     ;;
 esac
 
-if ! command -v jq &>/dev/null; then
-  echo "Error: jq installation failed. Install manually: https://jqlang.github.io/jq/download/" >&2
+if ! _jobpilot_locate_jq; then
+  echo "Error: jq installation completed but jq is still unavailable in this shell. Open a new shell or install manually: https://jqlang.github.io/jq/download/" >&2
   exit 1
 fi
 

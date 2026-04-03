@@ -5,9 +5,8 @@
 # Reads from profile.json:
 #   overleaf.gitUrl        - base HTTPS git URL (e.g. https://git.overleaf.com/PROJECT_ID)
 #   overleaf.localClonePath - local directory to clone into
-#   overleaf.gitUsername   - Overleaf account email
-#   overleaf.gitPassword   - Overleaf git token / password
-#   overleaf.texFiles      - array of .tex filenames expected after clone
+#   overleaf.gitToken      - Overleaf Git token (preferred; falls back to legacy gitPassword)
+#   overleaf.texFiles      - object map of role type to .tex filename
 
 set -euo pipefail
 
@@ -23,9 +22,9 @@ fi
 # Read credentials from profile.json
 GIT_URL=$(jq -r '.overleaf.gitUrl // ""' "$PROFILE")
 CLONE_PATH=$(jq -r '.overleaf.localClonePath // ""' "$PROFILE")
-GIT_USERNAME=$(jq -r '.overleaf.gitUsername // ""' "$PROFILE")
-GIT_PASSWORD=$(jq -r '.overleaf.gitPassword // ""' "$PROFILE")
-TEX_FILES=$(jq -r '.overleaf.texFiles // [] | .[]' "$PROFILE")
+GIT_TOKEN=$(jq -r '.overleaf.gitToken // .overleaf.gitPassword // ""' "$PROFILE")
+HAS_LEGACY_GIT_PASSWORD=$(jq -r 'if (.overleaf.gitPassword // "") != "" and (.overleaf.gitToken // "") == "" then "true" else "false" end' "$PROFILE")
+TEX_FILES=$(jq -r '.overleaf.texFiles // {} | .[]' "$PROFILE")
 
 # Validate required fields
 if [ -z "$GIT_URL" ]; then
@@ -36,12 +35,8 @@ if [ -z "$CLONE_PATH" ]; then
   echo "ERROR: overleaf.localClonePath is not set in profile.json" >&2
   exit 1
 fi
-if [ -z "$GIT_USERNAME" ]; then
-  echo "ERROR: overleaf.gitUsername is not set in profile.json" >&2
-  exit 1
-fi
-if [ -z "$GIT_PASSWORD" ]; then
-  echo "ERROR: overleaf.gitPassword is not set in profile.json" >&2
+if [ -z "$GIT_TOKEN" ]; then
+  echo "ERROR: overleaf.gitToken is not set in profile.json" >&2
   exit 1
 fi
 
@@ -51,29 +46,30 @@ if [ -d "$CLONE_PATH" ]; then
   exit 0
 fi
 
-# URL-encode special characters in the password using python3
-ENCODED_PASSWORD=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$GIT_PASSWORD" 2>/dev/null) || \
-ENCODED_PASSWORD=$(perl -MURI::Escape -e 'print uri_escape($ARGV[0])' "$GIT_PASSWORD" 2>/dev/null) || {
-  echo "ERROR: Could not URL-encode password (python3 or perl with URI::Escape required)" >&2
+if [ "$HAS_LEGACY_GIT_PASSWORD" = "true" ]; then
+  echo "WARNING: overleaf.gitPassword is deprecated. Rename it to overleaf.gitToken in profile.json." >&2
+fi
+
+# URL-encode special characters in the token using python3
+ENCODED_TOKEN=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$GIT_TOKEN" 2>/dev/null) || \
+ENCODED_TOKEN=$(perl -MURI::Escape -e 'print uri_escape($ARGV[0])' "$GIT_TOKEN" 2>/dev/null) || {
+  echo "ERROR: Could not URL-encode token (python3 or perl with URI::Escape required)" >&2
   exit 1
 }
 
-# Build authenticated URL by embedding credentials into the HTTPS URL
+# Build authenticated URL by embedding credentials into the HTTPS URL.
+# Overleaf token auth uses the fixed username "git".
 # Input URL format:  https://git.overleaf.com/PROJECT_ID
-# Output URL format: https://username:token@git.overleaf.com/PROJECT_ID
+# Output URL format: https://git:token@git.overleaf.com/PROJECT_ID
 PROTOCOL="${GIT_URL%%://*}"
 REST="${GIT_URL#*://}"
-ENCODED_USERNAME=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$GIT_USERNAME" 2>/dev/null) || \
-ENCODED_USERNAME=$(perl -MURI::Escape -e 'print uri_escape($ARGV[0])' "$GIT_USERNAME" 2>/dev/null) || {
-  echo "ERROR: Could not URL-encode username (python3 or perl with URI::Escape required)" >&2
-  exit 1
-}
-AUTH_URL="${PROTOCOL}://${ENCODED_USERNAME}:${ENCODED_PASSWORD}@${REST}"
+ENCODED_USERNAME="git"
+AUTH_URL="${PROTOCOL}://${ENCODED_USERNAME}:${ENCODED_TOKEN}@${REST}"
 
 echo "Cloning Overleaf project to $CLONE_PATH ..."
 
 if ! git clone "$AUTH_URL" "$CLONE_PATH"; then
-  echo "ERROR: git clone failed. Check your gitUrl, gitUsername, and gitPassword in profile.json." >&2
+  echo "ERROR: git clone failed. Check overleaf.gitUrl and overleaf.gitToken in profile.json. Overleaf Git Bridge token auth uses the username 'git'." >&2
   exit 1
 fi
 

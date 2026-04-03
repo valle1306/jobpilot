@@ -36,12 +36,15 @@ The system uses Overleaf Premium's Git Bridge to pull/edit/push LaTeX resumes an
        "general-ds": "productds.tex"
      },
      "tailoredOutputDir": "./resumes/tailored",
-     "gitUsername": "your@email.com",
-     "gitPassword": "YOUR_OVERLEAF_TOKEN_OR_PASSWORD",
+     "email": "your@email.com",
+     "gitToken": "YOUR_OVERLEAF_GIT_TOKEN",
+     "webPassword": "",
      "tailorResume": true
    }
    ```
 3. Run: `bash scripts/overleaf-clone.sh` to clone the Overleaf project locally
+   - Overleaf Git token auth uses username `git`
+   - On Windows PowerShell: `.\scripts\overleaf-clone.ps1`
 
 ### How It Works Per Job
 1. Classify job type → select .tex template
@@ -111,7 +114,7 @@ Always push after each commit: `git push origin main`
 - NEVER commit `profile.json` — it contains credentials
 - NEVER commit `applied-jobs.json` or `runs/` — personal data
 - NEVER commit `resumes/tailored/` or `overleaf-resume/` — personal data
-- The Overleaf token goes ONLY in profile.json
+- The Overleaf Git token goes ONLY in profile.json
 
 ## Autopilot Behavior
 - Jobs are ranked by match score (1–10), highest first

@@ -128,8 +128,9 @@
       "general-ds": "productds.tex"
     },
     "tailoredOutputDir": "./resumes/tailored",
-    "gitUsername": "your-overleaf-email@example.com",
-    "gitPassword": "YOUR_OVERLEAF_TOKEN_OR_PASSWORD",
+    "email": "your-overleaf-email@example.com",
+    "gitToken": "YOUR_OVERLEAF_GIT_TOKEN",
+    "webPassword": "",
     "tailorResume": true
   }
 }

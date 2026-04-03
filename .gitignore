@@ -1,6 +1,7 @@
 profile.json
 node_modules/
 .playwright-mcp/
+.playwright-standalone/
 *.pdf
 *.csv
 .claude/

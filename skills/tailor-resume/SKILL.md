@@ -36,6 +36,9 @@ Overleaf local clone not found at: <overleaf.localClonePath>
 Run the following command to clone your Overleaf project locally:
   bash ${CLAUDE_PLUGIN_ROOT}/scripts/overleaf-clone.sh
 
+On Windows PowerShell, use:
+  .\scripts\run-bash.ps1 scripts\overleaf-clone.sh
+
 Then re-run this command.
 ```
 
@@ -184,15 +187,18 @@ Store the modified content as `modifiedTexContent`.
 
 1. Write `modifiedTexContent` back to `<overleaf.localClonePath>/<texFile>`, overwriting the existing file.
 
-2. Generate a **company slug**: lowercase `companyName`, replace spaces and special characters with hyphens, strip all non-alphanumeric characters except hyphens. Example: "Stripe (US)" → `stripe-us`.
+2. Also write the same `modifiedTexContent` to `<overleaf.localClonePath>/main.tex`.
+   This ensures Overleaf compiles the selected template even when the project uses `main.tex` as the build entrypoint.
 
-3. Generate a **job title slug**: same rules applied to `jobTitle`. Example: "Analytics Engineer II" → `analytics-engineer-ii`.
+3. Generate a **company slug**: lowercase `companyName`, replace spaces and special characters with hyphens, strip all non-alphanumeric characters except hyphens. Example: "Stripe (US)" → `stripe-us`.
 
-4. Generate a **tag**: `<roleType>/<companySlug>-<YYYY-MM-DD>` using today's date.
+4. Generate a **job title slug**: same rules applied to `jobTitle`. Example: "Analytics Engineer II" → `analytics-engineer-ii`.
 
-5. Set **commit message**: `Tailored for <jobTitle> at <companyName>`
+5. Generate a **tag**: `<roleType>/<companySlug>-<YYYY-MM-DD>` using today's date.
 
-6. Run the push script:
+6. Set **commit message**: `Tailored for <jobTitle> at <companyName>`
+
+7. Run the push script:
 
 ```bash
 bash ${CLAUDE_PLUGIN_ROOT}/scripts/overleaf-push.sh "<commitMsg>" "<tag>"
@@ -201,7 +207,7 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/overleaf-push.sh "<commitMsg>" "<tag>"
 If the push script exits with a non-zero code:
 - Print the full error output.
 - Do **not** set `tailoredResumePath`.
-- Print: `Push failed. Check that your Overleaf Git credentials are correct in profile.json (overleaf.gitCredentials).`
+- Print: `Push failed. Check that your Overleaf Git credentials are correct in profile.json (overleaf.gitToken).`
 - **Stop.**
 
 If the push succeeds, print:
@@ -225,7 +231,9 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/overleaf-download-pdf.sh "<tailoredOutputDir>
 Read the `OVERLEAF_DOWNLOAD_INSTRUCTIONS` block from the script's stdout. This block contains step-by-step Playwright instructions along with the Overleaf project URL and login credentials needed. Execute each step in the instructions block exactly as described:
 
 1. Use `browser_navigate` to go to the Overleaf project URL.
-2. If a login page is shown, log in using the credentials provided in the instructions block.
+2. If a login page is shown:
+   - If `hasLoginPassword` is `true`, log in using the credentials provided in the instructions block.
+   - If `hasLoginPassword` is `false`, stop and ask the user to either sign in manually in the browser session or add `overleaf.webPassword` to `profile.json`.
 3. Wait for the green compile-success indicator in the Overleaf editor.
 4. **If the editor shows a compile error (`COMPILE_ERROR`):**
    - Print the compile error message in full.
@@ -271,3 +279,5 @@ The tailored PDF will be used automatically for the upload step.
 5. **Stop on push failure.** Do not leave the local `.tex` in a modified state without confirming the push succeeded. If push fails, the file has already been written locally — tell the user where it is so they can inspect or revert manually.
 
 Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/browser-tips.md` for handling Overleaf login, popups, and PDF download interactions.
+
+
