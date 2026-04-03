@@ -1,16 +1,17 @@
 {
   "personal": {
-    "firstName": "Jane",
-    "lastName": "Doe",
-    "email": "jane.doe@example.com",
-    "phone": "(555) 123-4567",
-    "website": "https://janedoe.dev",
-    "linkedin": "https://www.linkedin.com/in/janedoe",
-    "github": "https://github.com/janedoe",
+    "firstName": "Your",
+    "lastName": "Name",
+    "email": "you@example.com",
+    "phone": "555-555-5555",
+    "website": "https://yoursite.com",
+    "linkedin": "https://linkedin.com/in/yourhandle",
+    "github": "https://github.com/yourhandle",
     "resumes": {
-      "default": "/path/to/your/resume.pdf",
-      "frontend": "/path/to/frontend-resume.pdf",
-      "backend": "/path/to/backend-resume.pdf"
+      "default": "./productds.tex",
+      "product-ds": "./productds.tex",
+      "ml-ds": "./DS_ML.tex",
+      "general-ds": "./productds.tex"
     }
   },
   "workAuthorization": {
@@ -39,7 +40,7 @@
   },
   "credentials": {
     "default": {
-      "email": "jane.doe@example.com",
+      "email": "you@example.com",
       "password": "your-password-here"
     }
   },
@@ -115,5 +116,20 @@
     "maxSalary": 0,
     "salaryExpectation": "$100,001 to $125,000",
     "defaultStartDate": "2 weeks notice"
+  },
+  "overleaf": {
+    "enabled": false,
+    "projectId": "YOUR_OVERLEAF_PROJECT_ID",
+    "gitUrl": "https://git.overleaf.com/YOUR_OVERLEAF_PROJECT_ID",
+    "localClonePath": "./overleaf-resume",
+    "texFiles": {
+      "product-ds": "productds.tex",
+      "ml-ds": "DS_ML.tex",
+      "general-ds": "productds.tex"
+    },
+    "tailoredOutputDir": "./resumes/tailored",
+    "gitUsername": "your-overleaf-email@example.com",
+    "gitPassword": "YOUR_OVERLEAF_TOKEN_OR_PASSWORD",
+    "tailorResume": true
   }
 }
