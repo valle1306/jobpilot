@@ -152,6 +152,8 @@ Write scores and `matchReason` to the progress file.
 
 **Note on salary filtering:** Only filter if the job listing explicitly shows a salary range in the preview. Do not skip jobs that don't mention salary -- many good jobs omit compensation from listings.
 
+Jobs are always applied in descending score order (highest match first). The tailor-resume step runs inline per job during Phase 3 — not upfront for all jobs — to avoid unnecessary Overleaf pushes for lower-scored jobs that may be skipped.
+
 Update the `summary` counts in the progress file.
 
 ## Phase 2: Confirmation
@@ -205,6 +207,22 @@ Update the progress file after processing the response.
 ## Phase 3: Autonomous Apply Loop
 
 For each job with `status: "approved"`, in order of match score (highest first):
+
+### Step 3.0 — Tailor Resume (if enabled)
+
+Before applying to each job:
+
+1. Check `overleaf.tailorResume` in profile.json. If false or overleaf disabled: skip to Step 3.1
+2. Classify the job's role type using the classifier in skills/_shared/setup.md
+3. Run the tailor-resume skill inline:
+   - Use the job's URL and description as input
+   - Follow skills/tailor-resume/SKILL.md Steps 2–8
+   - This sets `tailoredResumePath` for this job's apply step
+4. After PDF download: proceed to Step 3.1 (navigate and apply) with tailoredResumePath set
+5. After application is submitted: reset `tailoredResumePath = ""` (next job gets its own tailored PDF)
+6. Rate limit: if previous job also used tailor-resume, wait 30 additional seconds before pushing to Overleaf (Overleaf rate limits rapid pushes)
+
+If tailor-resume fails for any reason: log a warning, clear tailoredResumePath, continue with default resume.
 
 ### Step 3.1: Begin Application
 
