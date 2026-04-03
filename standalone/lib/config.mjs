@@ -434,8 +434,17 @@ export function estimateYearsExperience(resumeText) {
 
 export function parseSearchQuery(query) {
   const normalized = normalizeWhitespace(query);
+  const withoutRelativeTime = normalizeWhitespace(
+    normalized
+      .replace(
+        /\b(?:in\s+)?(?:the\s+)?past\s+\d+\s+(?:hours?|days?|weeks?|months?)\b/gi,
+        ' '
+      )
+      .replace(/\blast\s+\d+\s+(?:hours?|days?|weeks?|months?)\b/gi, ' ')
+      .replace(/\bposted\s+today\b/gi, ' ')
+  );
   const remoteMatch = /\bremote\b/i.test(normalized);
-  const parts = normalized.split(/\s+/);
+  const parts = withoutRelativeTime.split(/\s+/).filter(Boolean);
   const locationTokens = [];
   const keywordTokens = [];
 
