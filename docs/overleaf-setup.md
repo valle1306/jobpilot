@@ -172,6 +172,7 @@ fatal: unable to access 'https://git.overleaf.com/...': The requested URL return
 
 - Add `overleaf.webPassword` if you want website login automated.
 - If you use SSO or do not want to store a website password, sign in manually when prompted.
+- If Overleaf keeps asking for one-time browser verification, run `.\scripts\overleaf-login-bootstrap.ps1` once so the persistent Playwright browser profile is already signed in before autorun starts.
 
 ### Missing `.tex` files after clone
 

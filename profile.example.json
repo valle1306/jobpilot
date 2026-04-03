@@ -162,6 +162,7 @@
     "entryLevelOnly": true,
     "entryLevelMaxYears": 3,
     "preferredLocations": ["Anywhere"],
+    "requireDirectApply": true,
     "skipTitleKeywords": ["senior", "staff", "principal", "lead", "manager", "director"],
     "maxApplicationsPerRun": 0,
     "searchLimitPerQuery": 12,

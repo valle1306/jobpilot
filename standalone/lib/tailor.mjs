@@ -5,12 +5,18 @@ import { promisify } from 'node:util';
 import {
   classifyRoleType,
   preferredResumePath,
-  repoRoot,
   resolveOpenAIConfig,
   resolveRepoPath
 } from './config.mjs';
-import { dateSlug, ensureDir, fileExists, nowIso, slugify, sleep, truncate, writeText } from './utils.mjs';
-import { gotoAndSettle, launchBrowserContext, promptForManualStep, detectLoginPage, attemptLogin } from './browser.mjs';
+import { dateSlug, ensureDir, fileExists, slugify, sleep, truncate, writeText } from './utils.mjs';
+import {
+  gotoAndSettle,
+  launchBrowserContext,
+  promptForManualStep,
+  detectHumanChallenge,
+  attemptLogin,
+  tryClickByText
+} from './browser.mjs';
 import { tailorResumeWithOpenAI } from './openai-tailor.mjs';
 import { topKeywords } from './scoring.mjs';
 
@@ -95,6 +101,116 @@ async function runGit(args, cwd) {
   await execFileAsync('git', args, { cwd });
 }
 
+async function detectOverleafAuthRequired(page) {
+  const url = page.url().toLowerCase();
+  if (
+    url.includes('overleaf.com/login') ||
+    url.includes('launchpad.overleaf.com') ||
+    url.includes('/register')
+  ) {
+    return true;
+  }
+
+  if ((await page.locator('input[type="password"]').count().catch(() => 0)) > 0) {
+    return true;
+  }
+
+  const bodyText = (await page.locator('body').innerText().catch(() => ''))
+    .toLowerCase()
+    .slice(0, 3000);
+  return (
+    bodyText.includes('log in to overleaf') ||
+    bodyText.includes('sign in to overleaf') ||
+    bodyText.includes('continue with email')
+  );
+}
+
+async function fetchOverleafPdfBuffer(page, pdfUrl) {
+  const response = await page.goto(pdfUrl, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2500);
+
+  const contentType =
+    response?.headers()?.['content-type'] ??
+    response?.headers()?.['Content-Type'] ??
+    '';
+
+  if (!response || !response.ok()) {
+    return null;
+  }
+
+  if (!/application\/pdf/i.test(contentType)) {
+    return null;
+  }
+
+  return response.body();
+}
+
+async function ensureOverleafSession(page, profile, allowManualPrompt) {
+  const credentials =
+    profile.overleaf?.email && profile.overleaf?.webPassword
+      ? { email: profile.overleaf.email, password: profile.overleaf.webPassword }
+      : null;
+
+  if (!(await detectOverleafAuthRequired(page))) {
+    return;
+  }
+
+  if (credentials) {
+    await attemptLogin(page, credentials);
+    await page.waitForTimeout(2500);
+  }
+
+  const challenge = await detectHumanChallenge(page);
+  if (challenge || (await detectOverleafAuthRequired(page))) {
+    const message = challenge
+      ? `Overleaf website login requires manual ${challenge} verification.`
+      : 'Overleaf website login requires manual verification.';
+
+    if (!allowManualPrompt) {
+      throw new Error(message);
+    }
+
+    await promptForManualStep(
+      'Overleaf still needs a manual sign-in or verification step in the opened browser.',
+      { allowPrompt: allowManualPrompt }
+    );
+  }
+}
+
+export async function bootstrapOverleafSession({
+  profile,
+  headless = false,
+  context = null,
+  allowManualPrompt = true
+}) {
+  const ownsContext = !context;
+  const browserContext = context ?? (await launchBrowserContext({ headless }));
+
+  try {
+    const page = await browserContext.newPage();
+    const projectUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}`;
+    const pdfUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}/output/output.pdf`;
+
+    await gotoAndSettle(page, projectUrl);
+    await ensureOverleafSession(page, profile, allowManualPrompt);
+
+    await tryClickByText(page, ['recompile']);
+    await sleep(6000);
+
+    const buffer = await fetchOverleafPdfBuffer(page, pdfUrl);
+    if (!buffer) {
+      throw new Error('Overleaf session was created, but the compiled PDF could not be fetched yet.');
+    }
+
+    await page.close().catch(() => {});
+    return { ok: true };
+  } finally {
+    if (ownsContext) {
+      await browserContext.close().catch(() => {});
+    }
+  }
+}
+
 async function maybeDownloadOverleafPdf({
   profile,
   outputPath,
@@ -111,40 +227,23 @@ async function maybeDownloadOverleafPdf({
     const pdfUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}/output/output.pdf`;
 
     await gotoAndSettle(page, projectUrl);
+    await ensureOverleafSession(page, profile, allowManualPrompt);
 
-    if (await detectLoginPage(page)) {
-      const credentials =
-        profile.overleaf?.email && profile.overleaf?.webPassword
-          ? { email: profile.overleaf.email, password: profile.overleaf.webPassword }
-          : null;
+    await tryClickByText(page, ['recompile']);
+    await sleep(8000);
 
-      if (credentials) {
-        await attemptLogin(page, credentials);
-        if (await detectLoginPage(page)) {
-          if (!allowManualPrompt) {
-            throw new Error('Overleaf website login requires manual verification.');
-          }
-
-          await promptForManualStep(
-            'Overleaf still needs manual verification before PDF download can continue.',
-            { allowPrompt: allowManualPrompt }
-          );
-        }
-      } else {
-        await promptForManualStep(
-          'Overleaf requires website login before PDF download. Sign in manually in the opened browser.',
-          { allowPrompt: allowManualPrompt }
-        );
-      }
+    let buffer = await fetchOverleafPdfBuffer(page, pdfUrl);
+    if (!buffer && !headless) {
+      await sleep(4000);
+      buffer = await fetchOverleafPdfBuffer(page, pdfUrl);
     }
-
-    await sleep(10000);
-    const response = await page.goto(pdfUrl, { waitUntil: 'networkidle' });
-    if (!response || !response.ok()) {
+    if (!buffer) {
+      if (await detectOverleafAuthRequired(page)) {
+        throw new Error('Overleaf website login requires manual verification.');
+      }
       throw new Error('Failed to fetch compiled PDF from Overleaf.');
     }
 
-    const buffer = await response.body();
     await ensureDir(path.dirname(outputPath));
     await fs.writeFile(outputPath, buffer);
     await page.close().catch(() => {});

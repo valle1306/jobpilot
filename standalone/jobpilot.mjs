@@ -21,7 +21,7 @@ import {
   searchJobs,
   fetchJobDetailsFromUrl
 } from './lib/search.mjs';
-import { tailorJob } from './lib/tailor.mjs';
+import { bootstrapOverleafSession, tailorJob } from './lib/tailor.mjs';
 import {
   canonicalizeJobUrl,
   normalizeWhitespace,
@@ -62,6 +62,7 @@ function printHelp() {
 
 Usage:
   node standalone/jobpilot.mjs setup [--bootstrap-overleaf]
+  node standalone/jobpilot.mjs overleaf-login
   node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless]
   node standalone/jobpilot.mjs tailor <job-url> [--headless] [--no-download]
   node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless]
@@ -91,6 +92,23 @@ async function commandSetup(flags) {
   await runPowerShellScript('check-setup.ps1');
   if (flags['bootstrap-overleaf']) {
     await runPowerShellScript('overleaf-bootstrap.ps1');
+  }
+}
+
+async function commandOverleafLogin(flags) {
+  const { profile } = await loadProfile();
+  const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
+
+  try {
+    await bootstrapOverleafSession({
+      profile,
+      headless: Boolean(flags.headless),
+      context,
+      allowManualPrompt: true
+    });
+    console.log('\nOverleaf session is ready in the persistent browser profile.');
+  } finally {
+    await context.close().catch(() => {});
   }
 }
 
@@ -334,11 +352,26 @@ function locationMatches(job, standaloneConfig = {}, profile = {}) {
   );
 }
 
-function applyAutopilotFilters(jobs, profile, standaloneConfig = {}, minMatchScore = 6) {
+function resolveRequireDirectApply(standaloneConfig = {}, flags = {}) {
+  if (typeof standaloneConfig.requireDirectApply === 'boolean') {
+    return standaloneConfig.requireDirectApply;
+  }
+
+  return Boolean(flags.submit) || Boolean(flags.headless) || Boolean(flags.yes);
+}
+
+function applyAutopilotFilters(
+  jobs,
+  profile,
+  standaloneConfig = {},
+  minMatchScore = 6,
+  options = {}
+) {
   const titleKeywords = [
     ...(profile.autopilot?.skipTitleKeywords ?? []),
     ...(standaloneConfig.skipTitleKeywords ?? [])
   ].map((value) => String(value).toLowerCase());
+  const requireDirectApply = Boolean(options.requireDirectApply);
 
   return jobs.map((job) => {
     if (job.status === 'skipped') {
@@ -376,6 +409,14 @@ function applyAutopilotFilters(jobs, profile, standaloneConfig = {}, minMatchSco
         ...job,
         status: 'skipped',
         skipReason: 'Outside preferred locations'
+      };
+    }
+
+    if (requireDirectApply && job.applySurface === 'aggregator' && !job.applyUrl) {
+      return {
+        ...job,
+        status: 'skipped',
+        skipReason: 'No direct ATS apply URL extracted from the aggregator listing'
       };
     }
 
@@ -567,13 +608,15 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     flags['search-limit'] ?? standaloneConfig.searchLimitPerQuery,
     maxApplications
   );
+  const requireDirectApply = resolveRequireDirectApply(standaloneConfig, flags);
 
   const { runPath, run } = await createRunFile(runQuery, {
     minMatchScore,
     maxApplications: maxApplicationsConfig.unlimited ? 'all' : maxApplications,
     queries,
     searchLimitPerQuery: perQueryLimit,
-    allowManualPrompt
+    allowManualPrompt,
+    requireDirectApply
   });
 
   try {
@@ -593,7 +636,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
           allowManualPrompt
         });
 
-    run.jobs = applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore);
+    run.jobs = applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore, {
+      requireDirectApply
+    });
     await saveRun(runPath, run);
 
     const pendingCandidates = run.jobs.filter((job) => job.status === 'pending');
@@ -787,6 +832,9 @@ async function main() {
         throw new Error('search requires a query string');
       }
       await commandSearch(positional.join(' '), flags);
+      break;
+    case 'overleaf-login':
+      await commandOverleafLogin(flags);
       break;
     case 'tailor':
       if (positional.length === 0) {

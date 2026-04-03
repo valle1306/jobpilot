@@ -10,6 +10,7 @@ import { dedupeJobs, scoreJob } from './scoring.mjs';
 import {
   canonicalizeJobUrl,
   extractExternalJobUrl,
+  extractKnownDirectJobUrl,
   isAggregatorUrl,
   normalizeWhitespace,
   truncate
@@ -120,6 +121,45 @@ async function extractCandidateLinks(page, board, limit = 15) {
   );
 
   return raw;
+}
+
+async function probeDirectApplyUrl(page) {
+  const candidates = [
+    page.getByRole('link', { name: /apply|easy apply|quick apply|apply now/i }).first(),
+    page.getByRole('button', { name: /apply|easy apply|quick apply|apply now/i }).first(),
+    page.locator('a[href*="externalApply"], a[href*="greenhouse"], a[href*="lever"], a[href*="workday"], a[href*="ashby"], a[href*="smartrecruiters"]').first()
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (!(await candidate.isVisible({ timeout: 400 }))) {
+        continue;
+      }
+
+      const popupPromise = page.context().waitForEvent('page', { timeout: 2500 }).catch(() => null);
+      await candidate.click({ timeout: 1500, noWaitAfter: true }).catch(() => {});
+      await page.waitForTimeout(1800);
+
+      const popup = await popupPromise;
+      const popupUrl = popup ? canonicalizeJobUrl(popup.url()) : '';
+      if (popup && popupUrl && !isAggregatorUrl(popupUrl)) {
+        await popup.close().catch(() => {});
+        return popupUrl;
+      }
+      if (popup) {
+        await popup.close().catch(() => {});
+      }
+
+      const navigatedUrl = canonicalizeJobUrl(page.url());
+      if (navigatedUrl && !isAggregatorUrl(navigatedUrl)) {
+        return navigatedUrl;
+      }
+    } catch {
+      // Keep probing other candidates.
+    }
+  }
+
+  return '';
 }
 
 async function hydrateJob(page, candidate, board) {
@@ -258,9 +298,17 @@ async function hydrateJob(page, candidate, board) {
   });
 
   const canonicalSourceUrl = canonicalizeJobUrl(candidate.url);
-  const resolvedApplyUrl = details.applyUrl
+  let resolvedApplyUrl = details.applyUrl
     ? extractExternalJobUrl(details.applyUrl)
     : '';
+
+  if (!resolvedApplyUrl) {
+    const rawHtml = await page.content().catch(() => '');
+    resolvedApplyUrl = extractKnownDirectJobUrl(rawHtml);
+  }
+  if (!resolvedApplyUrl && isAggregatorUrl(candidate.url)) {
+    resolvedApplyUrl = await probeDirectApplyUrl(page);
+  }
 
   return {
     ...candidate,

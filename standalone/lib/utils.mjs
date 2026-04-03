@@ -55,6 +55,19 @@ function decodeUrlCandidate(value) {
   return /^https?:\/\//i.test(value) ? value : '';
 }
 
+function decodeEmbeddedText(value) {
+  return String(value ?? '')
+    .replace(/\\u([0-9a-f]{4})/gi, (_, hex) =>
+      String.fromCharCode(Number.parseInt(hex, 16))
+    )
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/gi, '&');
+}
+
+function trimTrailingUrlPunctuation(value) {
+  return String(value ?? '').replace(/[)\]}",.;]+$/g, '');
+}
+
 export function extractExternalJobUrl(rawUrl) {
   if (!rawUrl) {
     return '';
@@ -87,6 +100,39 @@ export function extractExternalJobUrl(rawUrl) {
   } catch {
     return String(rawUrl).trim();
   }
+}
+
+export function extractKnownDirectJobUrl(rawText) {
+  if (!rawText) {
+    return '';
+  }
+
+  const text = decodeEmbeddedText(rawText);
+  const patterns = [
+    /https?:\/\/www\.linkedin\.com\/jobs\/view\/externalApply\?[^"'<>\\\s]+/gi,
+    /https?:\/\/(?:boards|job-boards)\.greenhouse\.io\/[^"'<>\\\s]+/gi,
+    /https?:\/\/jobs\.lever\.co\/[^"'<>\\\s]+/gi,
+    /https?:\/\/[a-z0-9.-]+(?:myworkdaysite\.com|myworkdayjobs\.com|workdayjobs\.com)\/[^"'<>\\\s]+/gi,
+    /https?:\/\/jobs\.ashbyhq\.com\/[^"'<>\\\s]+/gi,
+    /https?:\/\/careers\.smartrecruiters\.com\/[^"'<>\\\s]+/gi,
+    /https?:\/\/apply\.workable\.com\/[^"'<>\\\s]+/gi,
+    /https?:\/\/jobs\.jobvite\.com\/[^"'<>\\\s]+/gi,
+    /https?:\/\/[a-z0-9.-]+\.icims\.com\/jobs\/[^"'<>\\\s]+/gi
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern)?.[0];
+    if (!match) {
+      continue;
+    }
+
+    const candidate = extractExternalJobUrl(trimTrailingUrlPunctuation(match));
+    if (candidate && !isAggregatorUrl(candidate)) {
+      return candidate;
+    }
+  }
+
+  return '';
 }
 
 export function canonicalizeJobUrl(rawUrl) {

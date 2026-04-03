@@ -75,7 +75,15 @@ To run the standalone unattended workflow:
 .\scripts\jobpilot-autorun.ps1
 ```
 
+If Overleaf prompts for a browser verification step before PDF download, run this once first to seed the persistent browser session used by autorun:
+
+```powershell
+.\scripts\overleaf-login-bootstrap.ps1
+```
+
 To enable OpenAI-powered JD-aware resume tailoring in the standalone flow, set `OPENAI_API_KEY` in your environment or `.env`, then enable the `openai` block in `profile.json`.
+
+Unattended runs now prefer direct ATS/company apply URLs. Aggregator pages like LinkedIn are treated as discovery sources unless JobPilot can extract the external apply link.
 
 To create a Desktop shortcut for the unattended workflow:
 

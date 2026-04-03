@@ -84,26 +84,39 @@ export async function attemptLogin(page, credentials) {
     return false;
   }
 
-  const passwordInput = page
-    .locator(
-      'input[type="password"], input[name*="password" i], input[autocomplete="current-password"]'
-    )
-    .first();
   const emailInput = page
     .locator(
       'input[type="email"], input[name*="email" i], input[name*="username" i], input[autocomplete="username"]'
     )
     .first();
+  const passwordSelector =
+    'input[type="password"], input[name*="password" i], input[autocomplete="current-password"]';
 
   try {
-    if (!(await passwordInput.isVisible({ timeout: 500 }))) {
-      return false;
+    let touchedForm = false;
+
+    if (await emailInput.isVisible({ timeout: 700 }).catch(() => false)) {
+      await emailInput.fill(credentials.email);
+      touchedForm = true;
+
+      const passwordBeforeContinue = page.locator(passwordSelector).first();
+      const hasVisiblePasswordBeforeContinue = await passwordBeforeContinue
+        .isVisible({ timeout: 400 })
+        .catch(() => false);
+
+      if (!hasVisiblePasswordBeforeContinue) {
+        await tryClickByText(page, ['continue with email', 'continue', 'next', 'sign in', 'log in']);
+        await page.waitForTimeout(1200);
+      }
     }
 
-    if (await emailInput.isVisible({ timeout: 500 })) {
-      await emailInput.fill(credentials.email);
+    const passwordInput = page.locator(passwordSelector).first();
+    if (!(await passwordInput.isVisible({ timeout: 1500 }).catch(() => false))) {
+      return touchedForm;
     }
+
     await passwordInput.fill(credentials.password);
+    touchedForm = true;
 
     const submitted = await tryClickByText(page, ['sign in', 'log in', 'continue', 'submit']);
     if (!submitted) {
@@ -111,7 +124,7 @@ export async function attemptLogin(page, credentials) {
     }
 
     await page.waitForTimeout(2500);
-    return true;
+    return touchedForm;
   } catch {
     return false;
   }

@@ -40,7 +40,10 @@ For unattended runs from a desktop shortcut:
 ```powershell
 .\scripts\jobpilot-standalone.ps1 setup
 .\scripts\jobpilot-standalone.ps1 setup --bootstrap-overleaf
+.\scripts\overleaf-login-bootstrap.ps1
 ```
+
+Use `.\scripts\overleaf-login-bootstrap.ps1` once if Overleaf asks for a browser verification step. It opens the same persistent browser profile that unattended runs reuse later.
 
 ### Search
 
@@ -98,6 +101,7 @@ Current `standalone` config supports:
 - `entryLevelOnly`: skip senior/staff/manager-style titles
 - `entryLevelMaxYears`: skip roles that explicitly ask for more than this many years of experience
 - `preferredLocations`: preferred locations for filtering; use `["Anywhere"]` or `[]` to disable location filtering
+- `requireDirectApply`: when `true`, unattended runs skip bare aggregator listings like LinkedIn pages unless a direct ATS/company apply URL was extracted
 - `skipTitleKeywords`: extra blocked title keywords
 - `maxApplicationsPerRun`: set to `0` to apply all currently qualified matches in the run
 - `searchLimitPerQuery`: how many jobs to hydrate per query before filtering
@@ -137,4 +141,5 @@ You can verify the shortcut status any time with:
 - Search is best-effort and still needs adapter tuning per board.
 - Tailoring in standalone mode can now use OpenAI for JD-aware bullet rewrites, but it still validates edits aggressively and falls back to the conservative path if an edit looks unsafe.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
-- If you do not store `overleaf.webPassword`, Overleaf PDF download will pause for manual browser login.
+- Unattended runs work best with direct ATS/company URLs. Aggregator-only pages like LinkedIn are now treated as discovery sources unless JobPilot can extract a direct apply link.
+- If Overleaf still triggers a one-time verification step, run `.\scripts\overleaf-login-bootstrap.ps1` first so the persistent browser session is ready before autorun starts.
