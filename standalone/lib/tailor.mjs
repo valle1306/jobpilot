@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import {
   classifyRoleType,
   preferredResumePath,
+  resolveCodexConfig,
   resolveOpenAIConfig,
   resolveRepoPath
 } from './config.mjs';
@@ -17,6 +18,7 @@ import {
   attemptLogin,
   tryClickByText
 } from './browser.mjs';
+import { tailorResumeWithCodexCli } from './codex-tailor.mjs';
 import { tailorResumeWithOpenAI } from './openai-tailor.mjs';
 import { topKeywords } from './scoring.mjs';
 
@@ -391,6 +393,7 @@ export async function tailorJob({
   const texPath = path.join(clonePath, texFile);
   const mainTexPath = path.join(clonePath, 'main.tex');
   const originalTex = await fs.readFile(texPath, 'utf8');
+  const codexConfig = resolveCodexConfig(profile);
   const openAIConfig = resolveOpenAIConfig(profile);
 
   let texContent = originalTex;
@@ -401,7 +404,29 @@ export async function tailorJob({
   let acceptedEdits = [];
   let tailoringWarning = '';
 
-  if (openAIConfig.enabled) {
+  if (codexConfig.enabled) {
+    try {
+      const tailoredByModel = await tailorResumeWithCodexCli({
+        profile,
+        job,
+        texContent: originalTex,
+        roleType,
+        texFile
+      });
+
+      texContent = tailoredByModel.texContent;
+      addedKeywords = tailoredByModel.addedKeywords;
+      tailoringMethod = tailoredByModel.method;
+      modelUsed = tailoredByModel.model;
+      tailoringSummary = tailoredByModel.summary;
+      acceptedEdits = tailoredByModel.acceptedEdits;
+      tailoringWarning = tailoredByModel.warning || '';
+    } catch (error) {
+      tailoringWarning = error.message;
+    }
+  }
+
+  if (tailoringMethod !== 'codex-cli' && openAIConfig.enabled && (!codexConfig.enabled || codexConfig.fallbackToOpenAI)) {
     try {
       const tailoredByModel = await tailorResumeWithOpenAI({
         profile,
@@ -423,7 +448,7 @@ export async function tailorJob({
     }
   }
 
-  if (tailoringMethod !== 'openai') {
+  if (tailoringMethod !== 'openai' && tailoringMethod !== 'codex-cli') {
     const keywords = extractTailorKeywords(`${job.title}\n${job.description}`, originalTex);
     const heuristicResult = applySafeTailoring(originalTex, keywords);
     texContent = heuristicResult.texContent;

@@ -65,7 +65,7 @@ function printHelp() {
   console.log(`Standalone JobPilot CLI
 
 Usage:
-  node standalone/jobpilot.mjs setup [--bootstrap-overleaf]
+  node standalone/jobpilot.mjs setup [--bootstrap-overleaf] [--bootstrap-codex]
   node standalone/jobpilot.mjs overleaf-login
   node standalone/jobpilot.mjs search-bootstrap
   node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless] [--search-mode direct-ats-first]
@@ -97,6 +97,9 @@ async function commandSetup(flags) {
   await runPowerShellScript('check-setup.ps1');
   if (flags['bootstrap-overleaf']) {
     await runPowerShellScript('overleaf-bootstrap.ps1');
+  }
+  if (flags['bootstrap-codex']) {
+    await runPowerShellScript('codex-bootstrap.ps1');
   }
 }
 
@@ -255,7 +258,7 @@ async function commandApply(input, flags) {
   const { text: resumeText } = await readResumeText(profile);
   const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
   const standaloneConfig = profile.standalone ?? {};
-  const requireOpenAITailoring = resolveRequireOpenAITailoring(profile, standaloneConfig, flags);
+  const requiredTailoringProvider = resolveRequiredTailoringProvider(standaloneConfig, flags);
 
   try {
     const job = await loadJobFromInput(context, input);
@@ -268,7 +271,7 @@ async function commandApply(input, flags) {
         downloadPdf: true,
         context
       });
-      const tailoringCheck = validateTailoringForApply(tailored, requireOpenAITailoring);
+      const tailoringCheck = validateTailoringForApply(tailored, requiredTailoringProvider);
       if (!tailoringCheck.ok) {
         throw new Error(tailoringCheck.message);
       }
@@ -453,16 +456,28 @@ function resolvePreferredAtsDomains(standaloneConfig = {}) {
   ];
 }
 
-function resolveRequireOpenAITailoring(profile = {}, standaloneConfig = {}, flags = {}) {
+function resolveRequiredTailoringProvider(standaloneConfig = {}, flags = {}) {
+  const explicit = String(
+    flags['require-tailoring-provider'] ??
+      standaloneConfig.requireTailoringProvider ??
+      ''
+  )
+    .trim()
+    .toLowerCase();
+
+  if (['codex-cli', 'openai', 'ai-agent'].includes(explicit)) {
+    return explicit;
+  }
+
   if (typeof flags['require-openai-tailoring'] === 'boolean') {
-    return Boolean(flags['require-openai-tailoring']);
+    return Boolean(flags['require-openai-tailoring']) ? 'ai-agent' : '';
   }
 
   if (typeof standaloneConfig.requireOpenAITailoring === 'boolean') {
-    return standaloneConfig.requireOpenAITailoring;
+    return standaloneConfig.requireOpenAITailoring ? 'ai-agent' : '';
   }
 
-  return false;
+  return '';
 }
 
 function resolveRunLoopMode(standaloneConfig = {}, flags = {}) {
@@ -540,7 +555,7 @@ function classifyHostBlockReason(result = {}) {
   return '';
 }
 
-function validateTailoringForApply(tailored, requireOpenAITailoring = false) {
+function validateTailoringForApply(tailored, requiredProvider = '') {
   if (!tailored) {
     return {
       ok: false,
@@ -555,18 +570,24 @@ function validateTailoringForApply(tailored, requireOpenAITailoring = false) {
     };
   }
 
-  if (!requireOpenAITailoring) {
+  if (!requiredProvider) {
     return {
       ok: true,
       message: ''
     };
   }
 
-  if (tailored.tailoringMethod !== 'openai') {
+  const method = String(tailored.tailoringMethod ?? '').toLowerCase();
+  const providerSatisfied =
+    requiredProvider === 'ai-agent'
+      ? method === 'openai' || method === 'codex-cli'
+      : method === requiredProvider;
+
+  if (!providerSatisfied) {
     const warning = tailored.tailoringWarning ? ` ${tailored.tailoringWarning}` : '';
     return {
       ok: false,
-      message: `OpenAI tailoring is required for this run, but the result used ${tailored.tailoringMethod}.${warning}`.trim()
+      message: `${requiredProvider} tailoring is required for this run, but the result used ${tailored.tailoringMethod}.${warning}`.trim()
     };
   }
 
@@ -877,7 +898,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   const applySurfacePolicy = resolveApplySurfacePolicy(standaloneConfig, flags);
   const searchMode = resolveSearchMode(flags['search-mode'] ?? standaloneConfig.searchMode);
   const preferredAtsDomains = resolvePreferredAtsDomains(standaloneConfig);
-  const requireOpenAITailoring = resolveRequireOpenAITailoring(profile, standaloneConfig, flags);
+  const requiredTailoringProvider = resolveRequiredTailoringProvider(standaloneConfig, flags);
   const runLoopMode = resolveRunLoopMode(standaloneConfig, flags);
   const failurePolicy = resolveFailurePolicy(standaloneConfig, flags);
 
@@ -893,7 +914,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     applySurfacePolicy,
     searchMode,
     preferredAtsDomains,
-    requireOpenAITailoring
+    requiredTailoringProvider
   });
 
   try {
@@ -1026,7 +1047,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
             context,
             allowManualPrompt
           });
-          const tailoringCheck = validateTailoringForApply(tailored, requireOpenAITailoring);
+          const tailoringCheck = validateTailoringForApply(tailored, requiredTailoringProvider);
           if (!tailoringCheck.ok) {
             throw new Error(tailoringCheck.message);
           }
@@ -1159,7 +1180,8 @@ async function commandAutorun() {
     'apply-surface-policy': standaloneConfig.applySurfacePolicy ?? '',
     'run-loop-mode': standaloneConfig.runLoopMode ?? '',
     'failure-policy': standaloneConfig.failurePolicy ?? '',
-    'require-openai-tailoring': standaloneConfig.requireOpenAITailoring ?? ''
+    'require-openai-tailoring': standaloneConfig.requireOpenAITailoring ?? '',
+    'require-tailoring-provider': standaloneConfig.requireTailoringProvider ?? ''
   };
 
   await runAutopilot(profile, query, flags, standaloneConfig);

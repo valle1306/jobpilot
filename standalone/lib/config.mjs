@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { ensureDir, normalizeWhitespace } from './utils.mjs';
 
@@ -196,6 +198,106 @@ export function resolveOpenAIConfig(profile = {}) {
     maxBulletsPerEntry,
     maxExtraCharsPerBullet,
     maxTotalAddedChars
+  };
+}
+
+function resolveExplicitPath(pathValue) {
+  if (!pathValue) {
+    return '';
+  }
+
+  const resolved = path.isAbsolute(pathValue) ? pathValue : path.resolve(repoRoot, pathValue);
+  return fsSync.existsSync(resolved) ? resolved : '';
+}
+
+function detectVsCodeCodexPath() {
+  const extensionsDir = path.join(os.homedir(), '.vscode', 'extensions');
+  if (!fsSync.existsSync(extensionsDir)) {
+    return '';
+  }
+
+  try {
+    const matches = fsSync
+      .readdirSync(extensionsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('openai.chatgpt-'))
+      .map((entry) =>
+        path.join(extensionsDir, entry.name, 'bin', process.platform === 'win32' ? 'windows-x86_64' : '', process.platform === 'win32' ? 'codex.exe' : 'codex')
+      )
+      .filter(Boolean)
+      .filter((candidate) => fsSync.existsSync(candidate))
+      .sort((left, right) => right.localeCompare(left));
+
+    return matches[0] ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function detectInstalledCodexPath() {
+  const envCandidate = resolveExplicitPath(process.env.CODEX_CLI_PATH ?? '');
+  if (envCandidate) {
+    return envCandidate;
+  }
+
+  const platformCandidates =
+    process.platform === 'win32'
+      ? [
+          path.join(process.env.APPDATA ?? '', 'npm', 'codex.cmd'),
+          path.join(process.env.USERPROFILE ?? '', '.local', 'bin', 'codex.cmd'),
+          detectVsCodeCodexPath()
+        ]
+      : [
+          '/usr/local/bin/codex',
+          '/opt/homebrew/bin/codex',
+          path.join(os.homedir(), '.local', 'bin', 'codex')
+        ];
+
+  const match = platformCandidates.find((candidate) => candidate && fsSync.existsSync(candidate));
+  return match ?? '';
+}
+
+function readCodexAuthMode() {
+  const authPath = path.join(os.homedir(), '.codex', 'auth.json');
+  try {
+    const raw = fsSync.readFileSync(authPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return String(parsed.auth_mode ?? '').trim().toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+export function resolveCodexConfig(profile = {}) {
+  const codex = profile.codex ?? {};
+  const explicitCliPath =
+    resolveExplicitPath(codex.cliPath ?? '') || resolveExplicitPath(process.env.CODEX_CLI_PATH ?? '');
+  const cliPath = explicitCliPath || detectInstalledCodexPath();
+  const apiKeyEnvVar = String(codex.apiKeyEnvVar ?? 'CODEX_API_KEY').trim() || 'CODEX_API_KEY';
+  const fallbackApiKeyEnvVar =
+    String(codex.fallbackApiKeyEnvVar ?? 'OPENAI_API_KEY').trim() || 'OPENAI_API_KEY';
+  const authMode = readCodexAuthMode();
+  const primaryApiKey = process.env[apiKeyEnvVar] ?? '';
+  const fallbackApiKey = process.env[fallbackApiKeyEnvVar] ?? '';
+  const preferApiKey = codex.preferApiKey === true;
+  const canUseStoredAuth = authMode === 'chatgpt' || authMode === 'api_key';
+  const effectiveApiKey = preferApiKey || !canUseStoredAuth ? primaryApiKey || fallbackApiKey : '';
+  const model = String(codex.model ?? '').trim();
+  const timeoutMs = Math.max(30000, Number(codex.timeoutMs ?? 240000) || 240000);
+  const sandbox = String(codex.sandbox ?? 'workspace-write').trim() || 'workspace-write';
+
+  return {
+    enabled: codex.enabled === true,
+    cliPath,
+    available: Boolean(cliPath),
+    authMode,
+    apiKeyEnvVar,
+    fallbackApiKeyEnvVar,
+    apiKey: effectiveApiKey,
+    model,
+    timeoutMs,
+    sandbox,
+    preferApiKey,
+    fallbackToOpenAI: codex.fallbackToOpenAI === true
   };
 }
 

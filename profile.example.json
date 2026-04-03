@@ -54,6 +54,17 @@
     "maxExtraCharsPerBullet": 36,
     "maxTotalAddedChars": 120
   },
+  "codex": {
+    "enabled": true,
+    "cliPath": "",
+    "model": "gpt-5.4",
+    "sandbox": "workspace-write",
+    "apiKeyEnvVar": "CODEX_API_KEY",
+    "fallbackApiKeyEnvVar": "OPENAI_API_KEY",
+    "preferApiKey": false,
+    "fallbackToOpenAI": false,
+    "timeoutMs": 240000
+  },
   "jobBoards": [
     {
       "name": "LinkedIn",
@@ -163,11 +174,13 @@
     "failurePolicy": "continue-and-log",
     "searchMode": "direct-ats-first",
     "applySurfacePolicy": "external-only",
+    "tailoringProvider": "codex-cli",
+    "requireTailoringProvider": "codex-cli",
     "entryLevelOnly": true,
     "entryLevelMaxYears": 3,
     "preferredLocations": ["Anywhere"],
     "requireDirectApply": true,
-    "requireOpenAITailoring": true,
+    "requireOpenAITailoring": false,
     "preferredAtsDomains": [
       "greenhouse.io",
       "lever.co",

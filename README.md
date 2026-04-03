@@ -75,6 +75,12 @@ To run the standalone unattended workflow:
 .\scripts\jobpilot-autorun.ps1
 ```
 
+To bootstrap Codex CLI for standalone JD-aware LaTeX editing:
+
+```powershell
+.\scripts\codex-bootstrap.ps1
+```
+
 If Overleaf prompts for a browser verification step before PDF download, run this once first to seed the persistent browser session used by autorun:
 
 ```powershell
@@ -87,15 +93,16 @@ If the search boards show authwalls, Cloudflare, or other anti-bot pages, seed t
 .\scripts\search-session-bootstrap.ps1
 ```
 
-To enable OpenAI-powered JD-aware resume tailoring in the standalone flow, set `OPENAI_API_KEY` in your environment or `.env`, then enable the `openai` block in `profile.json`. For standalone runs in this repo, `.env` now takes precedence over stale inherited Windows environment variables.
-If you want the shortcut to behave more like the original Claude-powered flow, set `standalone.requireOpenAITailoring` to `true` so JobPilot refuses to apply when OpenAI tailoring fails or falls back.
+To enable JD-aware AI resume tailoring in the standalone flow, keep the `codex` block enabled in `profile.json` and run `.\scripts\codex-bootstrap.ps1`. JobPilot can use your existing Codex CLI ChatGPT login or fall back to `CODEX_API_KEY` or `OPENAI_API_KEY` from `.env`.
+If you want the shortcut to behave more like the original Claude-powered flow, set `standalone.requireTailoringProvider` to `codex-cli` so JobPilot refuses to apply unless Codex CLI tailoring succeeds and produces a tailored PDF.
 If you want to watch the browser work live, set `standalone.headless` to `false` in `profile.json`.
 
-Unattended runs now follow this order: discover jobs -> tailor with OpenAI -> compile/download the one-page Overleaf PDF -> upload the PDF into the ATS/company form -> submit -> record the result.
-When OpenAI keeps the resume unchanged because no safe one-page bullet edits are needed, that now counts as a valid OpenAI tailoring result instead of forcing a heuristic fallback.
+Unattended runs now follow this order: discover jobs -> tailor with Codex CLI or the configured AI provider -> compile/download the one-page Overleaf PDF -> upload the PDF into the ATS/company form -> submit -> record the result.
+The standalone flow now prefers Codex CLI for real file editing of the LaTeX resume before Overleaf compile, and still treats a deliberate no-op as a valid AI-tailoring result.
 LinkedIn is treated as a discovery source in unattended mode. Aggregator pages like LinkedIn are skipped unless JobPilot can extract a direct external apply link.
 The current standalone defaults also disable `Indeed` and `Hiring Cafe` because both are frequently blocked in unattended browser sessions, and use `direct-ats-first` ranking so Greenhouse, Lever, and Workday-style apply links are prioritized.
 Redirector-style hosts such as `jobright.ai`, `appcast`, and similar non-ATS wrappers are also skipped in unattended mode, and repeated login/verification/incomplete failures on the same apply host are short-circuited for the rest of the run.
+The ATS filler now also handles hidden resume upload inputs better, which matters on sites like Lever where the visible upload control often wraps a hidden file field.
 Each autorun now writes both a machine-readable run JSON and a human-readable `*.summary.txt` file in `runs`, including applied, failed, skipped, and stage-specific totals.
 
 To create a Desktop shortcut for the unattended workflow:

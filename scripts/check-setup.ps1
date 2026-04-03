@@ -116,6 +116,33 @@ function Get-LocalEnvValue {
   return $null
 }
 
+function Get-CodexCliPath {
+  $command = Get-Command codex -ErrorAction SilentlyContinue
+  if ($command) {
+    return $command.Source
+  }
+
+  $npmCandidate = Join-Path $env:APPDATA "npm\codex.cmd"
+  if (Test-Path -LiteralPath $npmCandidate) {
+    return $npmCandidate
+  }
+
+  $extensionsDir = Join-Path $env:USERPROFILE ".vscode\extensions"
+  if (Test-Path -LiteralPath $extensionsDir) {
+    $extension = Get-ChildItem -LiteralPath $extensionsDir -Directory -Filter "openai.chatgpt-*" -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending |
+      Select-Object -First 1
+    if ($extension) {
+      $embeddedCandidate = Join-Path $extension.FullName "bin\windows-x86_64\codex.exe"
+      if (Test-Path -LiteralPath $embeddedCandidate) {
+        return $embeddedCandidate
+      }
+    }
+  }
+
+  return $null
+}
+
 if (-not (Test-Path $profilePath)) {
   Add-Result "ERROR" "profile.json" "Create profile.json from profile.example.json before running setup checks."
   $results | ForEach-Object { "{0}`t{1}`t{2}" -f $_.Level, $_.Name, $_.Message }
@@ -129,6 +156,8 @@ try {
   $results | ForEach-Object { "{0}`t{1}`t{2}" -f $_.Level, $_.Name, $_.Message }
   exit 1
 }
+
+$envPath = Join-Path $repoRoot ".env"
 
 $gitCommand = Get-Command git -ErrorAction SilentlyContinue
 if ($gitCommand) {
@@ -160,6 +189,16 @@ if ($jqCommand) {
   }
 } else {
   Add-Result "WARN" "jq" "jq is not installed yet. The shell scripts can install it on first run."
+}
+
+$codexEnabled = [bool](Get-Value -Root $profile -Path @("codex", "enabled"))
+$codexCliPath = Get-CodexCliPath
+if ($codexCliPath) {
+  Add-Result "OK" "codex.cli" "Codex CLI is available at $codexCliPath."
+} elseif ($codexEnabled) {
+  Add-Result "ERROR" "codex.cli" "Codex CLI was not found. Run .\scripts\codex-bootstrap.ps1"
+} else {
+  Add-Result "WARN" "codex.cli" "Codex CLI was not found. Run .\scripts\codex-bootstrap.ps1 if you want Codex-powered resume tailoring."
 }
 
 if ($gitCommand) {
@@ -253,8 +292,6 @@ if ($openAIEnabled) {
   if ([string]::IsNullOrWhiteSpace([string]$openAIModel)) {
     $openAIModel = "gpt-5.4-mini"
   }
-
-  $envPath = Join-Path $repoRoot ".env"
   $processApiKeyValue = [Environment]::GetEnvironmentVariable([string]$apiKeyEnvVar, "Process")
   $userApiKeyValue = [Environment]::GetEnvironmentVariable([string]$apiKeyEnvVar, "User")
   $envFileApiKeyValue = Get-LocalEnvValue -EnvPath $envPath -Name ([string]$apiKeyEnvVar)
@@ -296,6 +333,63 @@ if ($standaloneRequireOpenAITailoring) {
     Add-Result "ERROR" "standalone.requireOpenAITailoring" "standalone.requireOpenAITailoring is true but the OpenAI API key is missing."
   } else {
     Add-Result "OK" "standalone.requireOpenAITailoring" "Standalone runs will require successful OpenAI tailoring before applying."
+  }
+}
+
+$codexRequireProvider = [string](Get-Value -Root $profile -Path @("standalone", "requireTailoringProvider"))
+if ($codexEnabled) {
+  $codexModel = [string](Get-Value -Root $profile -Path @("codex", "model"))
+  if ([string]::IsNullOrWhiteSpace($codexModel)) {
+    $codexModel = "CLI default"
+  }
+  Add-Result "OK" "codex.model" "Codex CLI tailoring model is set to $codexModel."
+
+  $codexApiKeyEnvVar = [string](Get-Value -Root $profile -Path @("codex", "apiKeyEnvVar"))
+  if ([string]::IsNullOrWhiteSpace($codexApiKeyEnvVar)) {
+    $codexApiKeyEnvVar = "CODEX_API_KEY"
+  }
+  $codexFallbackApiKeyEnvVar = [string](Get-Value -Root $profile -Path @("codex", "fallbackApiKeyEnvVar"))
+  if ([string]::IsNullOrWhiteSpace($codexFallbackApiKeyEnvVar)) {
+    $codexFallbackApiKeyEnvVar = "OPENAI_API_KEY"
+  }
+
+  $codexProcessApiKey = [Environment]::GetEnvironmentVariable($codexApiKeyEnvVar, "Process")
+  $codexUserApiKey = [Environment]::GetEnvironmentVariable($codexApiKeyEnvVar, "User")
+  $codexEnvFileApiKey = Get-LocalEnvValue -EnvPath $envPath -Name $codexApiKeyEnvVar
+  $codexFallbackEnvKey = Get-LocalEnvValue -EnvPath $envPath -Name $codexFallbackApiKeyEnvVar
+  $codexAuthPath = Join-Path $env:USERPROFILE ".codex\auth.json"
+  $codexAuthMode = ""
+  if (Test-Path -LiteralPath $codexAuthPath) {
+    try {
+      $codexAuthMode = [string]((Get-Content -LiteralPath $codexAuthPath -Raw | ConvertFrom-Json).auth_mode)
+    } catch {
+      $codexAuthMode = ""
+    }
+  }
+
+  if ($codexAuthMode -eq "chatgpt") {
+    Add-Result "OK" "codex.auth" "Codex CLI is logged in with ChatGPT."
+  } elseif ($codexAuthMode -eq "api_key") {
+    Add-Result "OK" "codex.auth" "Codex CLI is configured with API-key auth."
+  } elseif (
+    -not [string]::IsNullOrWhiteSpace($codexProcessApiKey) -or
+    -not [string]::IsNullOrWhiteSpace($codexUserApiKey) -or
+    -not [string]::IsNullOrWhiteSpace($codexEnvFileApiKey) -or
+    -not [string]::IsNullOrWhiteSpace($codexFallbackEnvKey)
+  ) {
+    Add-Result "OK" "codex.auth" "Codex CLI can fall back to repo or environment API key settings."
+  } else {
+    Add-Result "WARN" "codex.auth" "Codex CLI is enabled but no ChatGPT login or API key fallback was detected. Run .\scripts\codex-bootstrap.ps1"
+  }
+}
+
+if ($codexRequireProvider -eq "codex-cli") {
+  if (-not $codexEnabled) {
+    Add-Result "ERROR" "standalone.requireTailoringProvider" "standalone.requireTailoringProvider is codex-cli but codex.enabled is false."
+  } elseif (-not $codexCliPath) {
+    Add-Result "ERROR" "standalone.requireTailoringProvider" "standalone.requireTailoringProvider is codex-cli but Codex CLI was not found."
+  } else {
+    Add-Result "OK" "standalone.requireTailoringProvider" "Standalone runs will require successful Codex CLI tailoring before applying."
   }
 }
 

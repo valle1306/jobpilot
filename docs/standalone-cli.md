@@ -23,6 +23,14 @@ Optional for OpenAI-powered resume tailoring:
 
 For repo-local standalone runs, values in `.env` take precedence over inherited Windows environment variables. This avoids stale user-level `OPENAI_API_KEY` values overriding the key you intended to use for this repo.
 
+For Codex CLI-powered tailoring on Windows:
+
+```powershell
+.\scripts\codex-bootstrap.ps1
+```
+
+JobPilot will use your existing Codex CLI ChatGPT login when available, or fall back to `CODEX_API_KEY` / `OPENAI_API_KEY` from `.env`.
+
 ## Commands
 
 Use the PowerShell wrapper:
@@ -42,8 +50,10 @@ For unattended runs from a desktop shortcut:
 ```powershell
 .\scripts\jobpilot-standalone.ps1 setup
 .\scripts\jobpilot-standalone.ps1 setup --bootstrap-overleaf
+.\scripts\jobpilot-standalone.ps1 setup --bootstrap-codex
 .\scripts\overleaf-login-bootstrap.ps1
 .\scripts\search-session-bootstrap.ps1
+.\scripts\codex-bootstrap.ps1
 ```
 
 Use `.\scripts\overleaf-login-bootstrap.ps1` once if Overleaf asks for a browser verification step. It opens the same persistent browser profile that unattended runs reuse later.
@@ -108,11 +118,13 @@ Current `standalone` config supports:
 - `failurePolicy`: currently `continue-and-log`; failed jobs are recorded and the run continues
 - `searchMode`: `balanced` or `direct-ats-first`; the direct ATS mode ranks Greenhouse, Lever, and Workday-style hosts ahead of generic external apply links
 - `applySurfacePolicy`: default `external-only`; unattended runs use LinkedIn as discovery only and follow extracted external apply targets
+- `tailoringProvider`: preferred AI tailoring backend; use `codex-cli` for file-level LaTeX editing through Codex CLI
+- `requireTailoringProvider`: set to `codex-cli`, `openai`, or `ai-agent` to block applications unless that provider succeeds
 - `entryLevelOnly`: skip senior/staff/manager-style titles
 - `entryLevelMaxYears`: skip roles that explicitly ask for more than this many years of experience
 - `preferredLocations`: preferred locations for filtering; use `["Anywhere"]` or `[]` to disable location filtering
 - `requireDirectApply`: when `true`, unattended runs skip bare aggregator listings like LinkedIn pages unless a direct ATS/company apply URL was extracted
-- `requireOpenAITailoring`: when `true`, standalone apply and autorun stop before applying if OpenAI tailoring does not succeed and produce a tailored PDF
+- `requireOpenAITailoring`: legacy boolean gate; if `true`, standalone apply and autorun require an AI tailoring provider instead of heuristic fallback
 - `preferredAtsDomains`: optional ATS hosts to prioritize in `direct-ats-first` mode
 - `skipTitleKeywords`: extra blocked title keywords
 - `maxApplicationsPerRun`: set to `0` to apply all currently qualified matches in the run
@@ -129,7 +141,7 @@ The unattended workflow order is:
 
 - discover jobs
 - filter to unattended-safe external apply targets
-- tailor resume with OpenAI
+- tailor resume with Codex CLI or the configured AI provider
 - compile and download the one-page PDF from Overleaf
 - upload the PDF into the ATS/company form
 - submit and record the result
@@ -137,6 +149,7 @@ The unattended workflow order is:
 Current `openai` config supports:
 
 - `enabled`: turn on OpenAI-backed resume tailoring before Overleaf compile
+- `enabled`: turn on the legacy OpenAI API tailoring fallback
 - `apiKeyEnvVar`: environment variable name for the API key, usually `OPENAI_API_KEY`
 - `model`: OpenAI model ID, default `gpt-5.4-mini`
 - `maxBulletEdits`: maximum LaTeX bullet rewrites per tailored resume
@@ -167,8 +180,10 @@ You can verify the shortcut status any time with:
 - Search is best-effort and still needs adapter tuning per board.
 - The current standalone defaults disable `Indeed` and `Hiring Cafe` because both are frequently blocked by anti-bot challenges in unattended mode.
 - Tailoring in standalone mode can now use OpenAI for JD-aware bullet rewrites, but it still validates edits aggressively. If OpenAI makes no accepted safe bullet edits, JobPilot now keeps the existing one-page resume content and still records the result as an OpenAI tailoring success instead of forcing a heuristic fallback.
+- Standalone mode now supports `codex-cli` as the preferred tailoring provider, which edits a temporary copy of the LaTeX resume file directly before the result is synced back into the Overleaf build flow.
 - If you enable `requireOpenAITailoring`, that conservative fallback is no longer accepted for unattended applying. The run will fail that job instead of applying with a non-OpenAI-tailored resume.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
+- Resume upload handling now includes hidden file inputs, which improves compatibility with ATSes like Lever that wrap the real upload control behind a styled button.
 - Unattended runs work best with direct ATS/company URLs. LinkedIn Easy Apply is skipped in unattended mode; LinkedIn is treated as a discovery source unless JobPilot can extract a direct external apply link.
 - Redirector-style hosts such as `jobright.ai`, `appcast`, `remotehunter`, `jobsyn`, and similar non-ATS apply wrappers are now treated as aggregator surfaces and skipped in unattended mode.
 - If an apply host requires login, extra verification, or repeatedly stalls as `incomplete`, standalone autorun now skips the rest of that host for the current run instead of wasting more attempts.

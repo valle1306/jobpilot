@@ -64,6 +64,7 @@ async function extractJobDetailsFromPage(page) {
     return {
       title: pickText(['h1', '[data-test-job-title]', '.posting-headline h2']),
       company: pickText(['[data-company-name]', '.company', '.posting-header h3']),
+      location: pickText(['[data-location]', '.location', '.posting-categories', '.posting-headline .sort-by-time-posted']),
       description
     };
   });
@@ -115,12 +116,13 @@ async function scanFields(page) {
     const fields = [];
 
     for (const element of elements) {
-      if (!isVisible(element)) {
+      const type = (element.getAttribute('type') || element.tagName).toLowerCase();
+      const isFileInput = type === 'file';
+      if (!isFileInput && !isVisible(element)) {
         continue;
       }
 
-      const type = (element.getAttribute('type') || element.tagName).toLowerCase();
-      if (['hidden', 'submit', 'button', 'image', 'reset'].includes(type)) {
+      if (!isFileInput && ['hidden', 'submit', 'button', 'image', 'reset'].includes(type)) {
         continue;
       }
 
@@ -203,8 +205,20 @@ function inferFieldAnswer(field, ctx) {
   if (/email/.test(key)) {
     return { kind: 'text', value: profile.personal.email };
   }
+  if (/which location are you applying for|location are you applying for|preferred work location/.test(key)) {
+    return {
+      kind: field.tag === 'select' ? 'select' : 'text',
+      value: ctx.jobLocation || ctx.preferredLocation || ''
+    };
+  }
   if (/phone|mobile|cell/.test(key)) {
     return { kind: 'text', value: profile.personal.phone };
+  }
+  if (/current location|your location/.test(key)) {
+    return {
+      kind: 'text',
+      value: normalizeWhitespace(`${profile.address.city || ''}, ${profile.address.state || ''}`)
+    };
   }
   if (/linkedin/.test(key)) {
     return { kind: 'text', value: profile.personal.linkedin };
@@ -404,6 +418,7 @@ export async function applyToJob({
     let jobDetails = {
       title: job.title || '',
       company: job.company || '',
+      location: job.location || '',
       description: job.description || ''
     };
 
@@ -454,6 +469,7 @@ export async function applyToJob({
     jobDetails = {
       title: jobDetails.title || extracted.title,
       company: jobDetails.company || extracted.company,
+      location: jobDetails.location || extracted.location,
       description: jobDetails.description || extracted.description
     };
 
@@ -508,7 +524,12 @@ export async function applyToJob({
           profile,
           yearsExperience,
           resumePath: effectiveResumePath,
-          coverLetter
+          coverLetter,
+          jobLocation: jobDetails.location || job.location || '',
+          preferredLocation:
+            profile.workAuthorization?.preferredLocations?.[0] ??
+            profile.standalone?.preferredLocations?.[0] ??
+            ''
         });
         if (!answer) {
           continue;

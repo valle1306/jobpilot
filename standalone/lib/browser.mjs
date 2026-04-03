@@ -90,7 +90,22 @@ export async function detectLoginPage(page) {
     .count()
     .catch(() => 0);
 
-  return emailCount > 0;
+  if (emailCount === 0) {
+    return false;
+  }
+
+  const bodyText = (await page.locator('body').innerText().catch(() => ''))
+    .toLowerCase()
+    .slice(0, 5000);
+
+  return (
+    bodyText.includes('log in') ||
+    bodyText.includes('login') ||
+    bodyText.includes('sign in') ||
+    bodyText.includes('continue with email') ||
+    bodyText.includes('sign into your account') ||
+    bodyText.includes('forgot password')
+  );
 }
 
 export async function attemptLogin(page, credentials) {
