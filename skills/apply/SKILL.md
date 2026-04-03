@@ -71,6 +71,25 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-applied.sh "<job-url>"
 
 If the script outputs `already-applied`, inform the user: **"You've already applied to this job."** Ask if they want to proceed anyway or stop.
 
+### Step 0a — Tailored Resume Check
+
+Check if a tailored resume is available for this application:
+
+- If `tailoredResumePath` session variable is set AND the file exists at that path:
+  → Note: "Using tailored resume: <path>"
+  → Use this path for ALL resume upload steps in this application (skip normal resume selection)
+
+- If `tailoredResumePath` is NOT set AND `overleaf.tailorResume` is true in profile.json:
+  → Ask the user:
+    "No tailored resume found. Options:
+     1. Run /tailor-resume <url> first for a keyword-optimized resume
+     2. Continue with your default resume
+    Enter 1 or 2:"
+  → If user chooses 1: stop here, let user run /tailor-resume, then re-run /apply
+  → If user chooses 2: proceed with normal resume selection from setup.md
+
+- If `overleaf.tailorResume` is false or overleaf is disabled: skip this step silently
+
 ### Step 1: Navigate and Assess the Page
 
 1. Use `browser_navigate` to open the URL.
