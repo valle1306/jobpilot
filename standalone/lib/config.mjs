@@ -308,14 +308,22 @@ export function resolveCodexApplyConfig(profile = {}) {
     : [];
   const hostPatterns = configuredHosts.length
     ? configuredHosts
-    : [
+      : [
         'myworkdayjobs.com',
         'myworkdaysite.com',
         'workdayjobs.com',
+        'ultipro.com',
+        'ukg.com',
         'icims.com',
         'taleo.net',
+        'workforcenow.adp.com',
+        'adp.com',
+        'paycomonline.net',
+        'brassring.com',
         'oraclecloud.com',
-        'avature.net'
+        'avature.net',
+        'hrsmart.com',
+        'silkroad.com'
       ];
 
   return {

@@ -9,6 +9,7 @@ import {
 import {
   dateSlug,
   ensureDir,
+  isAggregatorUrl,
   normalizeWhitespace,
   writeJson,
   writeText
@@ -40,7 +41,30 @@ export function shouldUseCodexApplyAssist(targetUrl = '', profile = {}) {
   }
 
   const normalized = String(targetUrl ?? '').toLowerCase();
-  return config.hostPatterns.some((pattern) => normalized.includes(pattern));
+  if (!normalized || isAggregatorUrl(normalized)) {
+    return false;
+  }
+
+  if (config.hostPatterns.some((pattern) => normalized.includes(pattern))) {
+    return true;
+  }
+
+  try {
+    const host = new URL(targetUrl).hostname.toLowerCase();
+    const preferredDomains = Array.isArray(profile.standalone?.preferredAtsDomains)
+      ? profile.standalone.preferredAtsDomains
+          .map((value) => String(value ?? '').trim().toLowerCase())
+          .filter(Boolean)
+      : [];
+
+    if (preferredDomains.some((domain) => host.includes(domain))) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildPrompt({ job, host, round }) {

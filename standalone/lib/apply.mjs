@@ -43,6 +43,20 @@ function isWorkdayUrl(url = '') {
   );
 }
 
+function isRegistrationWallUrl(url = '') {
+  const normalized = String(url ?? '').toLowerCase();
+  return (
+    normalized.includes('/account/register') ||
+    normalized.includes('/register?') ||
+    normalized.includes('/register/') ||
+    normalized.includes('create-account') ||
+    normalized.includes('createaccount') ||
+    normalized.includes('/signup') ||
+    normalized.includes('sign-up') ||
+    normalized.includes('candidate/register')
+  );
+}
+
 function escapeRegExp(value) {
   return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -506,6 +520,19 @@ async function chooseAction(page) {
 }
 
 async function ensureApplicationForm(page) {
+  const genericChoices = [
+    'continue as guest',
+    'continue without an account',
+    'continue without creating an account',
+    'apply without creating an account',
+    'apply without an account',
+    'apply manually',
+    'continue to application',
+    'continue to apply',
+    'start application',
+    'skip autofill'
+  ];
+
   const clicked = await tryClickByText(page, [
     'easy apply',
     'quick apply',
@@ -517,13 +544,19 @@ async function ensureApplicationForm(page) {
     await page.waitForTimeout(2500);
   }
 
+  for (const label of genericChoices) {
+    const handled = await tryClickByText(page, [label]);
+    if (handled) {
+      await page.waitForTimeout(1800);
+    }
+  }
+
   if (isWorkdayUrl(page.url())) {
     const workdayChoices = [
-      'apply manually',
-      'continue as guest',
-      'continue without an account',
-      'skip autofill',
-      'start application'
+      'review autofill profile',
+      'continue with autofill',
+      'continue with resume',
+      'enter manually'
     ];
 
     for (const label of workdayChoices) {
@@ -1120,7 +1153,9 @@ export async function applyToJob({
     const validationIssues = await extractValidationIssues(page);
     const incompleteReason = validationIssues.length
       ? `The application flow stalled before reaching a submit-ready state. Visible validation issues: ${validationIssues.join(' | ')}`
-      : `The application flow stalled before reaching a submit-ready state on ${page.url()}.`;
+      : isRegistrationWallUrl(page.url())
+        ? `This ATS redirected the application to an account-registration wall on ${page.url()}. No guest/manual apply path was found.`
+        : `The application flow stalled before reaching a submit-ready state on ${page.url()}.`;
 
     return {
       status: 'incomplete',

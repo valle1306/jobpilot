@@ -14,6 +14,7 @@ test('resolveCodexApplyConfig enables hard-host assistance by default when codex
   assert.equal(config.maxActionsPerRound, 6);
   assert.ok(config.hostPatterns.includes('myworkdayjobs.com'));
   assert.ok(config.hostPatterns.includes('icims.com'));
+  assert.ok(config.hostPatterns.includes('ultipro.com'));
 });
 
 test('shouldUseCodexApplyAssist matches configured hard ATS hosts only', () => {
@@ -21,7 +22,8 @@ test('shouldUseCodexApplyAssist matches configured hard ATS hosts only', () => {
     codex: { enabled: true },
     standalone: {
       codexAssistedApply: true,
-      codexAssistedApplyHosts: ['myworkdayjobs.com', 'lever.co']
+      codexAssistedApplyHosts: ['myworkdayjobs.com', 'lever.co'],
+      preferredAtsDomains: ['greenhouse.io']
     }
   };
 
@@ -38,6 +40,38 @@ test('shouldUseCodexApplyAssist matches configured hard ATS hosts only', () => {
   );
   assert.equal(
     shouldUseCodexApplyAssist('https://boards.greenhouse.io/acme/jobs/123', profile),
+    false
+  );
+});
+
+test('shouldUseCodexApplyAssist also covers non-preferred external ATS hosts', () => {
+  const profile = {
+    codex: { enabled: true },
+    standalone: {
+      codexAssistedApply: true,
+      preferredAtsDomains: ['greenhouse.io', 'lever.co', 'myworkdayjobs.com']
+    }
+  };
+
+  assert.equal(
+    shouldUseCodexApplyAssist(
+      'https://recruiting2.ultipro.com/company/JobBoard/123/OpportunityDetail',
+      profile
+    ),
+    true
+  );
+  assert.equal(
+    shouldUseCodexApplyAssist(
+      'https://careers.example.com/jobs/business-analyst-1',
+      profile
+    ),
+    true
+  );
+  assert.equal(
+    shouldUseCodexApplyAssist(
+      'https://job-boards.greenhouse.io/acme/jobs/123',
+      profile
+    ),
     false
   );
 });

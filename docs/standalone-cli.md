@@ -124,7 +124,7 @@ Current `standalone` config supports:
 - `tailoringProvider`: preferred AI tailoring backend; use `codex-cli` for file-level LaTeX editing through Codex CLI
 - `requireTailoringProvider`: set to `codex-cli`, `openai`, or `ai-agent` to block applications unless that provider succeeds
 - `codexAssistedApply`: when `true`, hard ATS hosts can ask Codex CLI for the next browser actions based on the live page state
-- `codexAssistedApplyHosts`: host substrings that should trigger Codex-assisted apply, such as Workday, iCIMS, Taleo, Oracle Recruiting, and Avature tenants
+- `codexAssistedApplyHosts`: host substrings that should trigger Codex-assisted apply, such as Workday, UKG/UltiPro, ADP, iCIMS, Taleo, Oracle Recruiting, SilkRoad, and Avature tenants
 - `codexAssistedApplyMaxRounds`: how many Codex-assisted planning rounds a single application step can use before falling back to the normal bounded loop
 - `codexAssistedApplyMaxActions`: maximum browser actions Codex can suggest per assistance round
 - `entryLevelOnly`: skip senior/staff/manager-style titles
@@ -190,7 +190,7 @@ You can verify the shortcut status any time with:
 - The current standalone defaults disable `Indeed` and `Hiring Cafe` because both are frequently blocked by anti-bot challenges in unattended mode.
 - Tailoring in standalone mode can now use OpenAI for JD-aware bullet rewrites, but it still validates edits aggressively. If OpenAI makes no accepted safe bullet edits, JobPilot now keeps the existing one-page resume content and still records the result as an OpenAI tailoring success instead of forcing a heuristic fallback.
 - Standalone mode now supports `codex-cli` as the preferred tailoring provider, which edits a temporary copy of the LaTeX resume file directly before the result is synced back into the Overleaf build flow.
-- Standalone mode can also use Codex CLI during the apply stage for hard ATS hosts. That makes the browser loop more agentic on Workday-class forms, but it still cannot bypass real login, verification, CAPTCHA, or MFA challenges.
+- Standalone mode can also use Codex CLI during the apply stage for hard ATS hosts and other non-preferred external ATS pages. That makes the browser loop more agentic on Workday-class forms, but it still cannot bypass real login, verification, CAPTCHA, or MFA challenges.
 - If you enable `requireOpenAITailoring`, that conservative fallback is no longer accepted for unattended applying. The run will fail that job instead of applying with a non-OpenAI-tailored resume.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
 - Resume upload handling now includes hidden file inputs, which improves compatibility with ATSes like Lever that wrap the real upload control behind a styled button.
