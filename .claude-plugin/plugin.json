@@ -1,6 +1,6 @@
 {
   "name": "jobpilot",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Automate job applications, generate cover letters and proposals, prep for interviews - all powered by your resume.",
   "author": {
     "name": "Sukhrob Ilyosbekov",
@@ -16,5 +16,15 @@
     "playwright",
     "automation",
     "upwork"
+  ],
+  "skills": [
+    "autopilot",
+    "apply",
+    "apply-batch",
+    "tailor-resume",
+    "search",
+    "cover-letter",
+    "interview",
+    "dashboard"
   ]
 }
