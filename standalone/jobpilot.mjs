@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { applyToJob } from './lib/apply.mjs';
 import {
   ensureWorkingDirs,
+  getEnabledSearchBoards,
   loadProfile,
   readResumeText,
   repoRoot,
@@ -63,6 +64,7 @@ function printHelp() {
 Usage:
   node standalone/jobpilot.mjs setup [--bootstrap-overleaf]
   node standalone/jobpilot.mjs overleaf-login
+  node standalone/jobpilot.mjs search-bootstrap
   node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless]
   node standalone/jobpilot.mjs tailor <job-url> [--headless] [--no-download]
   node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless]
@@ -107,6 +109,32 @@ async function commandOverleafLogin(flags) {
       allowManualPrompt: true
     });
     console.log('\nOverleaf session is ready in the persistent browser profile.');
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
+async function commandSearchBootstrap() {
+  const { profile } = await loadProfile();
+  const boards = getEnabledSearchBoards(profile);
+  const context = await launchBrowserContext({ headless: false });
+
+  try {
+    for (const board of boards) {
+      if (!board.searchUrl) {
+        continue;
+      }
+
+      const page = await context.newPage();
+      await page.goto(board.searchUrl, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(1500);
+      console.log(`Opened ${board.name}: ${board.searchUrl}`);
+    }
+
+    console.log('\nComplete any login or bot-verification steps in the opened browser tabs.');
+    console.log('When the search sites look normal, close the browser window to finish bootstrap.');
+
+    await new Promise((resolve) => context.browser()?.once('disconnected', resolve));
   } finally {
     await context.close().catch(() => {});
   }
@@ -832,6 +860,9 @@ async function main() {
         throw new Error('search requires a query string');
       }
       await commandSearch(positional.join(' '), flags);
+      break;
+    case 'search-bootstrap':
+      await commandSearchBootstrap();
       break;
     case 'overleaf-login':
       await commandOverleafLogin(flags);

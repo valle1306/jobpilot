@@ -41,9 +41,11 @@ For unattended runs from a desktop shortcut:
 .\scripts\jobpilot-standalone.ps1 setup
 .\scripts\jobpilot-standalone.ps1 setup --bootstrap-overleaf
 .\scripts\overleaf-login-bootstrap.ps1
+.\scripts\search-session-bootstrap.ps1
 ```
 
 Use `.\scripts\overleaf-login-bootstrap.ps1` once if Overleaf asks for a browser verification step. It opens the same persistent browser profile that unattended runs reuse later.
+Use `.\scripts\search-session-bootstrap.ps1` if LinkedIn, Indeed, or other search boards are showing authwalls or security verification screens. It opens the enabled search boards in the persistent browser profile so you can sign in or solve the challenge once.
 
 ### Search
 
@@ -143,3 +145,4 @@ You can verify the shortcut status any time with:
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
 - Unattended runs work best with direct ATS/company URLs. Aggregator-only pages like LinkedIn are now treated as discovery sources unless JobPilot can extract a direct apply link.
 - If Overleaf still triggers a one-time verification step, run `.\scripts\overleaf-login-bootstrap.ps1` first so the persistent browser session is ready before autorun starts.
+- Some search boards now block unattended browsers entirely. When that happens, autorun will log the board-specific block reason instead of silently returning zero jobs.

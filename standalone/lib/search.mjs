@@ -1,4 +1,4 @@
-import { getCredentialForUrl, getEnabledSearchBoards, parseSearchQuery } from './config.mjs';
+import { getEnabledSearchBoards, parseSearchQuery } from './config.mjs';
 import {
   attemptLogin,
   detectHumanChallenge,
@@ -16,6 +16,17 @@ import {
   truncate
 } from './utils.mjs';
 import { wasAlreadyApplied } from './runs.mjs';
+
+function getBoardSearchCredentials(board) {
+  if (!board?.email || !board?.password) {
+    return null;
+  }
+
+  return {
+    email: board.email,
+    password: board.password
+  };
+}
 
 function buildSearchUrl(board, parsed) {
   const base = board.searchUrl ?? '';
@@ -121,6 +132,39 @@ async function extractCandidateLinks(page, board, limit = 15) {
   );
 
   return raw;
+}
+
+async function detectSearchBlockReason(page, board) {
+  const url = page.url().toLowerCase();
+  const title = (await page.title().catch(() => '')).toLowerCase();
+  const bodyText = (await page.locator('body').innerText().catch(() => ''))
+    .toLowerCase()
+    .slice(0, 4000);
+
+  if (board.domain.includes('linkedin.com')) {
+    if (url.includes('linkedin.com/authwall') || title.includes('sign up | linkedin')) {
+      return 'LinkedIn authwall blocked unauthenticated job search.';
+    }
+  }
+
+  if (bodyText.includes('request blocked') || bodyText.includes('ray id for this request')) {
+    return `${board.name} blocked this browser session.`;
+  }
+
+  if (
+    bodyText.includes('performing security verification') ||
+    bodyText.includes('please solve the challenge below') ||
+    bodyText.includes('complete the following challenge to confirm this search was made by a human') ||
+    bodyText.includes('just a moment')
+  ) {
+    return `${board.name} presented a bot or security verification challenge.`;
+  }
+
+  if (title.includes('404') || bodyText.includes('404')) {
+    return `${board.name} search route returned 404.`;
+  }
+
+  return '';
 }
 
 async function probeDirectApplyUrl(page) {
@@ -367,8 +411,9 @@ export async function searchJobs({
       const searchUrl = buildSearchUrl(board, parsed);
       await gotoAndSettle(page, searchUrl);
 
-      if (await detectLoginPage(page)) {
-        await attemptLogin(page, getCredentialForUrl(profile, searchUrl));
+      const boardCredentials = getBoardSearchCredentials(board);
+      if (boardCredentials && (await detectLoginPage(page))) {
+        await attemptLogin(page, boardCredentials);
       }
 
       const challenge = await detectHumanChallenge(page);
@@ -383,7 +428,18 @@ export async function searchJobs({
         await genericSearchFill(page, parsed);
       }
 
+      const blockReason = await detectSearchBlockReason(page, board);
+      if (blockReason) {
+        throw new Error(blockReason);
+      }
+
       const candidates = await extractCandidateLinks(page, board, limit);
+      if (candidates.length === 0) {
+        const emptyReason = await detectSearchBlockReason(page, board);
+        if (emptyReason) {
+          throw new Error(emptyReason);
+        }
+      }
       let hydrated = [];
 
       for (const candidate of candidates.slice(0, hydrateLimit)) {

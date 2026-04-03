@@ -81,6 +81,12 @@ If Overleaf prompts for a browser verification step before PDF download, run thi
 .\scripts\overleaf-login-bootstrap.ps1
 ```
 
+If the search boards show authwalls, Cloudflare, or other anti-bot pages, seed the same persistent browser profile for job search too:
+
+```powershell
+.\scripts\search-session-bootstrap.ps1
+```
+
 To enable OpenAI-powered JD-aware resume tailoring in the standalone flow, set `OPENAI_API_KEY` in your environment or `.env`, then enable the `openai` block in `profile.json`.
 
 Unattended runs now prefer direct ATS/company apply URLs. Aggregator pages like LinkedIn are treated as discovery sources unless JobPilot can extract the external apply link.

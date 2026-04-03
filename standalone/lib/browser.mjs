@@ -70,14 +70,27 @@ export async function tryClickByText(page, texts) {
 }
 
 export async function detectLoginPage(page) {
-  const bodyText = (await page.locator('body').innerText().catch(() => ''))
-    .toLowerCase();
-  return (
-    bodyText.includes('sign in') ||
-    bodyText.includes('log in') ||
-    bodyText.includes('login') ||
-    (await page.locator('input[type="password"]').count()) > 0
-  );
+  const url = page.url().toLowerCase();
+  if (
+    /\/(login|log-in|signin|sign-in)(\/|$|\?)/i.test(url) ||
+    url.includes('auth') ||
+    url.includes('session')
+  ) {
+    return true;
+  }
+
+  if ((await page.locator('input[type="password"]').count().catch(() => 0)) > 0) {
+    return true;
+  }
+
+  const emailCount = await page
+    .locator(
+      'input[type="email"], input[name*="email" i], input[name*="username" i], input[autocomplete="username"]'
+    )
+    .count()
+    .catch(() => 0);
+
+  return emailCount > 0;
 }
 
 export async function attemptLogin(page, credentials) {
