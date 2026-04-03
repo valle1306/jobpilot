@@ -7,6 +7,11 @@
 
 ## Resume Selection
 
+Resume selection priority (check in order):
+1. `tailoredResumePath` session variable — if set, use this PDF for all upload steps, skip further selection
+2. Match job title/description against `personal.resumes` keys (product-ds, ml-ds, general-ds, frontend, backend)
+3. Fall back to `personal.resumes.default`
+
 The `personal.resumes` object maps role types to resume file paths:
 
 ```json
@@ -32,3 +37,25 @@ When credentials are needed for a domain:
 2. If the board entry has `email` and `password` set, use those.
 3. Otherwise, fall back to `credentials.default`.
 4. If no credentials are found at all, report it -- do not guess.
+
+## Overleaf Config
+
+When a skill needs Overleaf settings, read from profile.json:
+- `overleaf.enabled` — boolean, skip all Overleaf steps if false
+- `overleaf.projectId` — Overleaf project ID
+- `overleaf.localClonePath` — path to local git clone of Overleaf project
+- `overleaf.texFiles` — map of role type to .tex filename
+- `overleaf.tailoredOutputDir` — where to save tailored PDFs
+- `overleaf.gitUsername` / `overleaf.gitPassword` — Overleaf credentials
+
+## Role Classification
+
+When a skill needs to determine the resume type for a job, use this classifier:
+
+Given a job title and description, return one of: `product-ds`, `ml-ds`, or `general-ds`
+
+- **product-ds**: title or description contains any of: product, analytics, experimentation, A/B test, growth, funnel, retention, business intelligence, insights, data analyst, product analyst, dashboard, KPI, metrics
+- **ml-ds**: title or description contains any of: machine learning, ML engineer, deep learning, neural network, research scientist, healthcare AI, clinical, PyTorch, model training, LLM, NLP scientist, computer vision, reinforcement learning
+- **general-ds**: all other data science, statistics, or quantitative roles
+
+After classifying, look up `overleaf.texFiles.<roleType>` in profile.json for the .tex file to use.
