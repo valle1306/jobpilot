@@ -11,8 +11,18 @@ Job applications often span multiple pages/steps. For each page:
    - Text inputs -> `browser_fill_form` or `browser_click` + `browser_type`
    - Dropdowns/selects -> `browser_select_option`
    - Checkboxes/radio buttons -> `browser_click`
-   - File uploads (resume) -> `browser_file_upload` with the selected resume path from `personal.resumes` (see Resume Selection in setup.md)
+   - File uploads (resume) -> `browser_file_upload` using the Resume Upload Priority below
    - Date fields -> use the appropriate date format for the field
+
+### Resume Upload Priority
+
+When a form field requires a resume file upload, select the file in this order:
+
+1. **`tailoredResumePath`** (session variable) — if set and file exists, ALWAYS use this. This is a PDF tailored specifically for this job.
+2. **Role-matched variant** — match job title/description against `personal.resumes` keys (product-ds, ml-ds, general-ds)
+3. **`personal.resumes.default`** — fallback
+
+Note: tailored resumes are PDFs in `resumes/tailored/`. They are pre-compiled and ready to upload directly.
 
 ## Special Fields
 
