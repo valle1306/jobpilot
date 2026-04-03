@@ -3,6 +3,8 @@ profile.json
 node_modules/
 .playwright-mcp/
 .playwright-standalone/
+.playwright-standalone-edge/
+.playwright-standalone-chrome/
 *.pdf
 *.csv
 .claude/

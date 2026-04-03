@@ -966,6 +966,12 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   });
   const context = await contextPromise;
   const allowManualPrompt = execution.allowManualPrompt;
+  console.log(
+    `Browser mode: ${execution.browserName}, ${execution.headless ? 'headless' : 'visible'} (${execution.executionMode})`
+  );
+  if (execution.headless) {
+    console.log('Browser window will stay hidden because standalone.headless is true.');
+  }
   const maxApplicationsConfig = resolveMaxApplications(
     flags.limit ??
       standaloneConfig.maxApplicationsPerRun ??
