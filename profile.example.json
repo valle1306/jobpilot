@@ -136,15 +136,25 @@
   "standalone": {
     "enabled": true,
     "mode": "query",
-    "query": "entry level data scientist remote new york new jersey pennsylvania",
+    "query": "entry level data scientist",
+    "queries": [
+      "entry level data scientist",
+      "entry level data analyst",
+      "entry level product analyst",
+      "entry level business analyst",
+      "entry level analytics analyst",
+      "early career machine learning engineer"
+    ],
     "filePath": "./jobs-to-apply.txt",
     "headless": true,
     "autoApprove": true,
     "autoSubmit": true,
     "entryLevelOnly": true,
-    "preferredLocations": ["New York, NY", "New Jersey", "Pennsylvania", "Remote"],
+    "entryLevelMaxYears": 3,
+    "preferredLocations": ["Anywhere"],
     "skipTitleKeywords": ["senior", "staff", "principal", "lead", "manager", "director"],
-    "maxApplicationsPerRun": 8,
+    "maxApplicationsPerRun": 0,
+    "searchLimitPerQuery": 12,
     "resumePath": "",
     "logDir": "./runs/standalone-logs"
   }

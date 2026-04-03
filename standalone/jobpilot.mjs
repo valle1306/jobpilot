@@ -22,7 +22,7 @@ import {
   fetchJobDetailsFromUrl
 } from './lib/search.mjs';
 import { tailorJob } from './lib/tailor.mjs';
-import { prompt, truncate } from './lib/utils.mjs';
+import { prompt, truncate, uniqueBy } from './lib/utils.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -228,27 +228,72 @@ async function promptForApproval(jobs) {
   return answer;
 }
 
+function resolveEntryLevelMaxYears(standaloneConfig = {}) {
+  const value = Number(standaloneConfig.entryLevelMaxYears ?? 3);
+  if (!Number.isFinite(value) || value < 0) {
+    return 3;
+  }
+
+  return value;
+}
+
+function extractRequiredYears(description = '') {
+  const normalized = String(description ?? '').toLowerCase();
+  const matches = [
+    ...normalized.matchAll(
+      /(\d+)(?:\s*(?:-|\bto\b)\s*(\d+))?\s*\+?\s+years?(?:\s+of)?\s+experience/gi
+    )
+  ];
+
+  if (matches.length === 0) {
+    return null;
+  }
+
+  return Math.max(
+    ...matches.map((match) =>
+      Math.max(Number(match[1] ?? 0), Number(match[2] ?? match[1] ?? 0))
+    )
+  );
+}
+
 function titleMatchesEntryLevel(title, standaloneConfig = {}) {
   if (!standaloneConfig.entryLevelOnly) {
     return true;
   }
 
   const normalized = String(title ?? '').toLowerCase();
-  const blocked = [
-    'senior',
-    'sr.',
-    'sr ',
-    'staff',
-    'principal',
-    'lead',
-    'manager',
-    'director',
-    'head',
-    'vice president',
-    'vp '
+  const blockedPatterns = [
+    /\bsenior\b/i,
+    /\bsr\.?\b/i,
+    /\bstaff\b/i,
+    /\bprincipal\b/i,
+    /\blead\b/i,
+    /\bmanager\b/i,
+    /\bdirector\b/i,
+    /\bhead\b/i,
+    /\bvice president\b/i,
+    /\bvp\b/i,
+    /\bmid[-\s]?level\b/i,
+    /\blevel\s*[2-9]\b/i,
+    /\bii\b/i,
+    /\biii\b/i,
+    /\biv\b/i
   ];
 
-  return !blocked.some((keyword) => normalized.includes(keyword));
+  return !blockedPatterns.some((pattern) => pattern.test(normalized));
+}
+
+function yearsMatchEntryLevel(job, standaloneConfig = {}) {
+  if (!standaloneConfig.entryLevelOnly) {
+    return true;
+  }
+
+  const requiredYears = extractRequiredYears(job.description);
+  if (requiredYears === null) {
+    return true;
+  }
+
+  return requiredYears <= resolveEntryLevelMaxYears(standaloneConfig);
 }
 
 function locationMatches(job, standaloneConfig = {}, profile = {}) {
@@ -303,6 +348,14 @@ function applyAutopilotFilters(jobs, profile, standaloneConfig = {}, minMatchSco
       };
     }
 
+    if (!yearsMatchEntryLevel(job, standaloneConfig)) {
+      return {
+        ...job,
+        status: 'skipped',
+        skipReason: `Requires more than ${resolveEntryLevelMaxYears(standaloneConfig)} years of experience`
+      };
+    }
+
     if (!locationMatches(job, standaloneConfig, profile)) {
       return {
         ...job,
@@ -327,15 +380,161 @@ function applyAutopilotFilters(jobs, profile, standaloneConfig = {}, minMatchSco
   });
 }
 
+function normalizeQueries(value) {
+  if (Array.isArray(value)) {
+    return uniqueBy(
+      value
+        .map((entry) => String(entry ?? '').trim())
+        .filter(Boolean),
+      (entry) => entry.toLowerCase()
+    );
+  }
+
+  const single = String(value ?? '').trim();
+  return single ? [single] : [];
+}
+
+function defaultAutorunQueries() {
+  return [
+    'entry level data scientist',
+    'entry level data analyst',
+    'entry level product analyst',
+    'entry level business analyst',
+    'entry level analytics analyst',
+    'early career machine learning engineer'
+  ];
+}
+
+function resolveAutorunQueries(standaloneConfig = {}) {
+  const configured = normalizeQueries(standaloneConfig.queries);
+  if (configured.length > 0) {
+    return configured;
+  }
+
+  const fallback = normalizeQueries(standaloneConfig.query);
+  if (fallback.length > 0) {
+    return fallback;
+  }
+
+  return defaultAutorunQueries();
+}
+
+function resolveMaxApplications(rawValue) {
+  const value = Number(rawValue);
+  if (!Number.isFinite(value)) {
+    return { unlimited: false, value: 5 };
+  }
+
+  if (value <= 0) {
+    return { unlimited: true, value: Number.MAX_SAFE_INTEGER };
+  }
+
+  return { unlimited: false, value };
+}
+
+function resolvePerQuerySearchLimit(rawValue, maxApplications) {
+  const explicit = Number(rawValue);
+  if (Number.isFinite(explicit) && explicit > 0) {
+    return explicit;
+  }
+
+  if (!Number.isFinite(maxApplications) || maxApplications >= Number.MAX_SAFE_INTEGER) {
+    return 12;
+  }
+
+  return Math.max(maxApplications + 4, 12);
+}
+
+function mergeSearchResults(jobs) {
+  const byUrl = new Map();
+
+  for (const job of jobs) {
+    const key = job.url || `${job.board}|${job.title}|${job.company}`;
+    const existing = byUrl.get(key);
+    if (!existing) {
+      byUrl.set(key, {
+        ...job,
+        sourceQueries: normalizeQueries(job.sourceQueries)
+      });
+      continue;
+    }
+
+    const mergedQueries = uniqueBy(
+      [...normalizeQueries(existing.sourceQueries), ...normalizeQueries(job.sourceQueries)],
+      (value) => value.toLowerCase()
+    );
+    const preferred = (job.matchScore ?? 0) > (existing.matchScore ?? 0) ? job : existing;
+
+    byUrl.set(key, {
+      ...preferred,
+      sourceQueries: mergedQueries
+    });
+  }
+
+  return [...byUrl.values()]
+    .sort((left, right) => (right.matchScore ?? 0) - (left.matchScore ?? 0))
+    .map((job, index) => ({
+      ...job,
+      id: index + 1
+    }));
+}
+
+async function searchAcrossQueries({
+  context,
+  profile,
+  queries,
+  limit,
+  resumeText
+}) {
+  const aggregated = [];
+
+  for (const query of queries) {
+    console.log(`Searching query: ${query}`);
+    const jobs = await searchJobs({
+      context,
+      profile,
+      query,
+      limit,
+      resumeText
+    });
+
+    aggregated.push(
+      ...jobs.map((job) => ({
+        ...job,
+        sourceQueries: [query]
+      }))
+    );
+  }
+
+  return mergeSearchResults(aggregated);
+}
+
 async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   const { text: resumeText } = await readResumeText(profile);
   const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
-  const maxApplications = Number(flags.limit ?? profile.autopilot?.maxApplicationsPerRun ?? 5);
+  const maxApplicationsConfig = resolveMaxApplications(
+    flags.limit ??
+      standaloneConfig.maxApplicationsPerRun ??
+      profile.autopilot?.maxApplicationsPerRun ??
+      5
+  );
+  const maxApplications = maxApplicationsConfig.value;
   const minMatchScore = Number(profile.autopilot?.minMatchScore ?? 6);
-
-  const { runPath, run } = await createRunFile(query, {
-    minMatchScore,
+  const queries = normalizeQueries(query);
+  const runQuery =
+    flags.file || queries.length === 1
+      ? queries[0] || 'autorun'
+      : `multi-query autorun (${queries.length} queries)`;
+  const perQueryLimit = resolvePerQuerySearchLimit(
+    flags['search-limit'] ?? standaloneConfig.searchLimitPerQuery,
     maxApplications
+  );
+
+  const { runPath, run } = await createRunFile(runQuery, {
+    minMatchScore,
+    maxApplications: maxApplicationsConfig.unlimited ? 'all' : maxApplications,
+    queries,
+    searchLimitPerQuery: perQueryLimit
   });
 
   try {
@@ -344,22 +543,23 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
           context,
           filePath: flags.file,
           resumeText,
-          query
+          query: runQuery
         })
-      : await searchJobs({
+      : await searchAcrossQueries({
           context,
           profile,
-          query,
-          limit: maxApplications + 4,
+          queries,
+          limit: perQueryLimit,
           resumeText
         });
 
     run.jobs = applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore);
     await saveRun(runPath, run);
 
-    const approvedCandidates = run.jobs
-      .filter((job) => job.status === 'pending')
-      .slice(0, maxApplications);
+    const pendingCandidates = run.jobs.filter((job) => job.status === 'pending');
+    const approvedCandidates = maxApplicationsConfig.unlimited
+      ? pendingCandidates
+      : pendingCandidates.slice(0, maxApplications);
 
     if (approvedCandidates.length === 0) {
       console.log('No jobs met the current autopilot filters.');
@@ -478,8 +678,9 @@ async function commandAutorun() {
   }
 
   const query =
-    standaloneConfig.query ??
-    'entry level data scientist remote new york new jersey pennsylvania';
+    standaloneConfig.mode === 'file'
+      ? normalizeQueries(standaloneConfig.query ?? 'manual batch')
+      : resolveAutorunQueries(standaloneConfig);
 
   const flags = {
     yes: standaloneConfig.autoApprove ?? true,
@@ -490,7 +691,8 @@ async function commandAutorun() {
       profile.autopilot?.maxApplicationsPerRun ??
       5,
     file: standaloneConfig.mode === 'file' ? standaloneConfig.filePath : '',
-    resume: standaloneConfig.resumePath ?? ''
+    resume: standaloneConfig.resumePath ?? '',
+    'search-limit': standaloneConfig.searchLimitPerQuery ?? ''
   };
 
   await runAutopilot(profile, query, flags, standaloneConfig);

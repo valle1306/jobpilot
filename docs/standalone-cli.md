@@ -80,14 +80,17 @@ Current `standalone` config supports:
 
 - `mode`: `query` or `file`
 - `query`: default search query
+- `queries`: optional list of default search queries for autorun; useful for adjacent roles like data analyst and product analyst
 - `filePath`: URL list for file-driven batches
 - `headless`: run the browser headlessly
 - `autoApprove`: skip batch confirmation
 - `autoSubmit`: submit application forms automatically
 - `entryLevelOnly`: skip senior/staff/manager-style titles
-- `preferredLocations`: preferred locations for filtering
+- `entryLevelMaxYears`: skip roles that explicitly ask for more than this many years of experience
+- `preferredLocations`: preferred locations for filtering; use `["Anywhere"]` or `[]` to disable location filtering
 - `skipTitleKeywords`: extra blocked title keywords
-- `maxApplicationsPerRun`
+- `maxApplicationsPerRun`: set to `0` to apply all currently qualified matches in the run
+- `searchLimitPerQuery`: how many jobs to hydrate per query before filtering
 - `resumePath`: optional direct resume override
 - `logDir`: where autorun logs go
 
