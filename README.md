@@ -75,6 +75,14 @@ To run the standalone unattended workflow:
 .\scripts\jobpilot-autorun.ps1
 ```
 
+To create a Desktop shortcut for the unattended workflow:
+
+```powershell
+.\scripts\install-desktop-shortcut.ps1
+```
+
+On Windows, that shortcut is created in the Desktop path Windows resolves for your account, which is often `OneDrive\Desktop` on synced machines.
+
 ### 3. Allow browser permissions (recommended)
 
 Add to `.claude/settings.json`:

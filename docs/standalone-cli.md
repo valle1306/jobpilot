@@ -101,6 +101,14 @@ To install a desktop shortcut that launches the unattended workflow:
 
 That shortcut points to [scripts/jobpilot-autorun.cmd](c:\Users\lpnhu\Downloads\jobpilot\scripts\jobpilot-autorun.cmd), which in turn runs [scripts/jobpilot-autorun.ps1](c:\Users\lpnhu\Downloads\jobpilot\scripts\jobpilot-autorun.ps1).
 
+On Windows, the shortcut is created in whatever path `[Environment]::GetFolderPath("Desktop")` returns. If your Desktop is synced with OneDrive, that usually means `C:\Users\<you>\OneDrive\Desktop` instead of `C:\Users\<you>\Desktop`.
+
+You can verify the shortcut status any time with:
+
+```powershell
+.\scripts\check-setup.ps1
+```
+
 ## Current Scope
 
 - Search is best-effort and still needs adapter tuning per board.

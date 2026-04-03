@@ -155,6 +155,36 @@ if ($gitCommand) {
   }
 }
 
+$desktopPath = [Environment]::GetFolderPath("Desktop")
+$autorunLauncherPath = Join-Path $PSScriptRoot "jobpilot-autorun.cmd"
+if ([string]::IsNullOrWhiteSpace($desktopPath) -or -not (Test-Path -LiteralPath $desktopPath)) {
+  Add-Result "WARN" "desktop" "Windows Desktop path could not be resolved."
+} else {
+  Add-Result "OK" "desktop" "Windows Desktop resolves to $desktopPath."
+
+  $shortcutPath = Join-Path $desktopPath "JobPilot Autopilot.lnk"
+  if (-not (Test-Path -LiteralPath $shortcutPath)) {
+    Add-Result "WARN" "desktop shortcut" "Shortcut not found. Run .\scripts\install-desktop-shortcut.ps1"
+  } else {
+    try {
+      $shell = New-Object -ComObject WScript.Shell
+      $shortcut = $shell.CreateShortcut($shortcutPath)
+      if ($shortcut.TargetPath -eq $autorunLauncherPath) {
+        Add-Result "OK" "desktop shortcut" "Desktop shortcut points to scripts\jobpilot-autorun.cmd."
+      } else {
+        $targetMessage = if ([string]::IsNullOrWhiteSpace($shortcut.TargetPath)) {
+          "an empty target"
+        } else {
+          $shortcut.TargetPath
+        }
+        Add-Result "WARN" "desktop shortcut" "Shortcut exists but points to $targetMessage. Re-run .\scripts\install-desktop-shortcut.ps1"
+      }
+    } catch {
+      Add-Result "WARN" "desktop shortcut" "Shortcut exists but could not be inspected. Re-run .\scripts\install-desktop-shortcut.ps1"
+    }
+  }
+}
+
 $null = Check-Field "ERROR" "personal.firstName" @("personal", "firstName") "Set personal.firstName."
 $null = Check-Field "ERROR" "personal.lastName" @("personal", "lastName") "Set personal.lastName."
 $null = Check-Field "ERROR" "personal.email" @("personal", "email") "Set personal.email."
