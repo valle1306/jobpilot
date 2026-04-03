@@ -38,12 +38,57 @@ New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $logPath = Join-Path $logDir "autorun-$timestamp.log"
 $lockPath = Join-Path $logDir "autorun.lock"
+$staleLockMinutes = 20
 
-if (Test-Path $lockPath) {
-  throw "Another autorun appears to be active. Remove $lockPath if that previous run is no longer running."
+function Test-JobPilotAutorunOwnerActive {
+  param(
+    [Parameter(Mandatory = $false)]
+    [object]$LockInfo
+  )
+
+  if ($null -eq $LockInfo) {
+    return $false
+  }
+
+  $pidValue = 0
+  if ($LockInfo.PSObject.Properties.Name -contains "pid") {
+    [void][int]::TryParse([string]$LockInfo.pid, [ref]$pidValue)
+  }
+
+  if ($pidValue -le 0) {
+    return $false
+  }
+
+  $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+  return ($null -ne $process)
 }
 
-Set-Content -Path $lockPath -Value $timestamp
+if (Test-Path $lockPath) {
+  $lockRaw = Get-Content $lockPath -Raw -ErrorAction SilentlyContinue
+  $lockInfo = $null
+  try {
+    $lockInfo = $lockRaw | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    $lockInfo = [pscustomobject]@{
+      timestamp = ($lockRaw | Out-String).Trim()
+    }
+  }
+
+  $lockAgeMinutes = ((Get-Date) - (Get-Item $lockPath).LastWriteTime).TotalMinutes
+  if ((Test-JobPilotAutorunOwnerActive -LockInfo $lockInfo) -and $lockAgeMinutes -lt $staleLockMinutes) {
+    throw "Another autorun appears to be active. Existing lock: $lockPath"
+  }
+
+  "[$(Get-Date -Format o)] Removing stale autorun lock at $lockPath" | Tee-Object -FilePath $logPath -Append
+  Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+}
+
+$lockInfo = [pscustomobject]@{
+  pid = $PID
+  timestamp = (Get-Date -Format o)
+  logPath = $logPath
+}
+$lockInfo | ConvertTo-Json | Set-Content -Path $lockPath
 
 try {
   Push-Location $repoRoot
