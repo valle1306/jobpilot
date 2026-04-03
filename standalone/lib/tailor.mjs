@@ -125,24 +125,87 @@ async function detectOverleafAuthRequired(page) {
   );
 }
 
-async function fetchOverleafPdfBuffer(page, pdfUrl) {
-  const response = await page.goto(pdfUrl, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2500);
+async function waitForOverleafEditor(page) {
+  const readyLocators = [
+    page.getByRole('button', { name: /recompile/i }).first(),
+    page.getByRole('button', { name: /download pdf/i }).first(),
+    page.locator('[aria-label*="Recompile" i], [title*="Recompile" i]').first()
+  ];
 
-  const contentType =
-    response?.headers()?.['content-type'] ??
-    response?.headers()?.['Content-Type'] ??
-    '';
-
-  if (!response || !response.ok()) {
-    return null;
+  for (const locator of readyLocators) {
+    try {
+      await locator.waitFor({ state: 'visible', timeout: 6000 });
+      return true;
+    } catch {
+      // Try the next readiness signal.
+    }
   }
 
-  if (!/application\/pdf/i.test(contentType)) {
-    return null;
+  const bodyText = (await page.locator('body').innerText().catch(() => ''))
+    .toLowerCase()
+    .slice(0, 4000);
+  return bodyText.includes('recompile') || bodyText.includes('download pdf');
+}
+
+async function clickOverleafDownloadPdf(page) {
+  const directTargets = [
+    page.getByRole('button', { name: /download pdf/i }).first(),
+    page.getByRole('link', { name: /download pdf/i }).first(),
+    page.locator('[aria-label*="Download PDF" i], [title*="Download PDF" i]').first(),
+    page.locator('text=/download pdf/i').first()
+  ];
+
+  for (const target of directTargets) {
+    try {
+      if (await target.isVisible({ timeout: 800 })) {
+        await target.click({ timeout: 2000 });
+        return true;
+      }
+    } catch {
+      // Keep trying.
+    }
   }
 
-  return response.body();
+  const menuOpened =
+    (await tryClickByText(page, ['menu'])) ||
+    (await tryClickByText(page, ['file']));
+
+  if (!menuOpened) {
+    return false;
+  }
+
+  await page.waitForTimeout(800);
+
+  for (const label of ['download pdf', 'download as pdf', 'pdf']) {
+    const clicked = await tryClickByText(page, [label]);
+    if (clicked) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function downloadOverleafPdf(page, outputPath) {
+  await ensureDir(path.dirname(outputPath));
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const downloadPromise = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
+    const clicked = await clickOverleafDownloadPdf(page);
+    if (!clicked) {
+      continue;
+    }
+
+    const download = await downloadPromise;
+    if (!download) {
+      continue;
+    }
+
+    await download.saveAs(outputPath);
+    return outputPath;
+  }
+
+  return '';
 }
 
 async function ensureOverleafSession(page, profile, allowManualPrompt) {
@@ -189,17 +252,23 @@ export async function bootstrapOverleafSession({
   try {
     const page = await browserContext.newPage();
     const projectUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}`;
-    const pdfUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}/output/output.pdf`;
 
     await gotoAndSettle(page, projectUrl);
     await ensureOverleafSession(page, profile, allowManualPrompt);
+    const editorReady = await waitForOverleafEditor(page);
+    if (!editorReady) {
+      throw new Error('Overleaf editor did not finish loading after sign-in.');
+    }
 
     await tryClickByText(page, ['recompile']);
     await sleep(6000);
 
-    const buffer = await fetchOverleafPdfBuffer(page, pdfUrl);
-    if (!buffer) {
-      throw new Error('Overleaf session was created, but the compiled PDF could not be fetched yet.');
+    const downloadedPath = await downloadOverleafPdf(
+      page,
+      resolveRepoPath(path.join(profile.overleaf.tailoredOutputDir, 'overleaf-session-check.pdf'))
+    );
+    if (!downloadedPath) {
+      throw new Error('Overleaf session was created, but the compiled PDF could not be downloaded from the editor.');
     }
 
     await page.close().catch(() => {});
@@ -224,30 +293,31 @@ async function maybeDownloadOverleafPdf({
   try {
     const page = await context.newPage();
     const projectUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}`;
-    const pdfUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}/output/output.pdf`;
 
     await gotoAndSettle(page, projectUrl);
     await ensureOverleafSession(page, profile, allowManualPrompt);
+    const editorReady = await waitForOverleafEditor(page);
+    if (!editorReady) {
+      throw new Error('Overleaf editor did not finish loading after sign-in.');
+    }
 
     await tryClickByText(page, ['recompile']);
     await sleep(8000);
 
-    let buffer = await fetchOverleafPdfBuffer(page, pdfUrl);
-    if (!buffer && !headless) {
+    let downloadedPath = await downloadOverleafPdf(page, outputPath);
+    if (!downloadedPath && !headless) {
       await sleep(4000);
-      buffer = await fetchOverleafPdfBuffer(page, pdfUrl);
+      downloadedPath = await downloadOverleafPdf(page, outputPath);
     }
-    if (!buffer) {
+    if (!downloadedPath) {
       if (await detectOverleafAuthRequired(page)) {
         throw new Error('Overleaf website login requires manual verification.');
       }
-      throw new Error('Failed to fetch compiled PDF from Overleaf.');
+      throw new Error('Failed to download the compiled PDF from the Overleaf editor.');
     }
 
-    await ensureDir(path.dirname(outputPath));
-    await fs.writeFile(outputPath, buffer);
     await page.close().catch(() => {});
-    return outputPath;
+    return downloadedPath;
   } finally {
     if (ownsContext) {
       await context.close().catch(() => {});

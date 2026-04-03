@@ -24,6 +24,7 @@ export async function launchBrowserContext({ headless = false } = {}) {
 
   return chromium.launchPersistentContext(userDataDir, {
     executablePath,
+    acceptDownloads: true,
     headless,
     viewport: { width: 1440, height: 1024 },
     args: ['--disable-blink-features=AutomationControlled']
