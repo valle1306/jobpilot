@@ -39,9 +39,9 @@ export async function loadRepoEnv() {
         continue;
       }
 
-      if (!(parsed.key in process.env)) {
-        process.env[parsed.key] = parsed.value;
-      }
+      // Prefer repo-local .env values for this standalone project so stale
+      // user-level Windows environment variables do not override the repo setup.
+      process.env[parsed.key] = parsed.value;
     }
   } catch (error) {
     if (error.code !== 'ENOENT') {

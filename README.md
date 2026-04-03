@@ -87,7 +87,7 @@ If the search boards show authwalls, Cloudflare, or other anti-bot pages, seed t
 .\scripts\search-session-bootstrap.ps1
 ```
 
-To enable OpenAI-powered JD-aware resume tailoring in the standalone flow, set `OPENAI_API_KEY` in your environment or `.env`, then enable the `openai` block in `profile.json`.
+To enable OpenAI-powered JD-aware resume tailoring in the standalone flow, set `OPENAI_API_KEY` in your environment or `.env`, then enable the `openai` block in `profile.json`. For standalone runs in this repo, `.env` now takes precedence over stale inherited Windows environment variables.
 If you want the shortcut to behave more like the original Claude-powered flow, set `standalone.requireOpenAITailoring` to `true` so JobPilot refuses to apply when OpenAI tailoring fails or falls back.
 
 Unattended runs now follow this order: discover jobs -> tailor with OpenAI -> compile/download the one-page Overleaf PDF -> upload the PDF into the ATS/company form -> submit -> record the result.

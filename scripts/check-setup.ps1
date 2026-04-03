@@ -255,18 +255,33 @@ if ($openAIEnabled) {
   }
 
   $envPath = Join-Path $repoRoot ".env"
-  $apiKeyValue = [Environment]::GetEnvironmentVariable([string]$apiKeyEnvVar, "Process")
-  if ([string]::IsNullOrWhiteSpace($apiKeyValue)) {
-    $apiKeyValue = [Environment]::GetEnvironmentVariable([string]$apiKeyEnvVar, "User")
+  $processApiKeyValue = [Environment]::GetEnvironmentVariable([string]$apiKeyEnvVar, "Process")
+  $userApiKeyValue = [Environment]::GetEnvironmentVariable([string]$apiKeyEnvVar, "User")
+  $envFileApiKeyValue = Get-LocalEnvValue -EnvPath $envPath -Name ([string]$apiKeyEnvVar)
+
+  $apiKeyValue = $processApiKeyValue
+  $apiKeySource = "process environment"
+  if ([string]::IsNullOrWhiteSpace($apiKeyValue) -and -not [string]::IsNullOrWhiteSpace($envFileApiKeyValue)) {
+    $apiKeyValue = $envFileApiKeyValue
+    $apiKeySource = ".env"
   }
-  if ([string]::IsNullOrWhiteSpace($apiKeyValue)) {
-    $apiKeyValue = Get-LocalEnvValue -EnvPath $envPath -Name ([string]$apiKeyEnvVar)
+  if ([string]::IsNullOrWhiteSpace($apiKeyValue) -and -not [string]::IsNullOrWhiteSpace($userApiKeyValue)) {
+    $apiKeyValue = $userApiKeyValue
+    $apiKeySource = "user environment"
+  }
+
+  if (
+    -not [string]::IsNullOrWhiteSpace($envFileApiKeyValue) -and
+    -not [string]::IsNullOrWhiteSpace($userApiKeyValue) -and
+    $envFileApiKeyValue -ne $userApiKeyValue
+  ) {
+    Add-Result "WARN" "openai.apiKey.source" ".env and the user-level $apiKeyEnvVar differ. Standalone runs now prefer .env for this repo."
   }
 
   if ([string]::IsNullOrWhiteSpace($apiKeyValue)) {
     Add-Result "WARN" "openai.apiKey" "OpenAI tailoring is enabled but $apiKeyEnvVar is not set. Add it to your environment or .env."
   } else {
-    Add-Result "OK" "openai.apiKey" "OpenAI API key was found via $apiKeyEnvVar."
+    Add-Result "OK" "openai.apiKey" "OpenAI API key was found via $apiKeySource."
   }
 
   Add-Result "OK" "openai.model" "OpenAI tailoring model is set to $openAIModel."

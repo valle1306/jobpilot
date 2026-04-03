@@ -21,6 +21,8 @@ Optional for OpenAI-powered resume tailoring:
 
 2. Enable the `openai` block in `profile.json`.
 
+For repo-local standalone runs, values in `.env` take precedence over inherited Windows environment variables. This avoids stale user-level `OPENAI_API_KEY` values overriding the key you intended to use for this repo.
+
 ## Commands
 
 Use the PowerShell wrapper:
