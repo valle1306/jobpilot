@@ -301,6 +301,36 @@ export function resolveCodexConfig(profile = {}) {
   };
 }
 
+export function resolveCodexApplyConfig(profile = {}) {
+  const standalone = profile.standalone ?? {};
+  const configuredHosts = Array.isArray(standalone.codexAssistedApplyHosts)
+    ? standalone.codexAssistedApplyHosts
+    : [];
+  const hostPatterns = configuredHosts.length
+    ? configuredHosts
+    : [
+        'myworkdayjobs.com',
+        'myworkdaysite.com',
+        'workdayjobs.com',
+        'icims.com',
+        'taleo.net',
+        'oraclecloud.com',
+        'avature.net'
+      ];
+
+  return {
+    enabled: standalone.codexAssistedApply !== false && profile.codex?.enabled === true,
+    hostPatterns: hostPatterns
+      .map((value) => String(value ?? '').trim().toLowerCase())
+      .filter(Boolean),
+    maxRounds: Math.max(1, Number(standalone.codexAssistedApplyMaxRounds ?? 2) || 2),
+    maxActionsPerRound: Math.max(
+      1,
+      Number(standalone.codexAssistedApplyMaxActions ?? 6) || 6
+    )
+  };
+}
+
 export async function ensureWorkingDirs() {
   await ensureDir(path.join(repoRoot, 'runs'));
   await ensureDir(path.join(repoRoot, 'resumes', 'tailored'));

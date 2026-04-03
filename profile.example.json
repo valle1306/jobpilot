@@ -177,6 +177,18 @@
     "postedWithinHours": 24,
     "tailoringProvider": "codex-cli",
     "requireTailoringProvider": "codex-cli",
+    "codexAssistedApply": true,
+    "codexAssistedApplyHosts": [
+      "myworkdayjobs.com",
+      "myworkdaysite.com",
+      "workdayjobs.com",
+      "icims.com",
+      "taleo.net",
+      "oraclecloud.com",
+      "avature.net"
+    ],
+    "codexAssistedApplyMaxRounds": 2,
+    "codexAssistedApplyMaxActions": 6,
     "entryLevelOnly": true,
     "entryLevelMaxYears": 3,
     "preferredLocations": ["Anywhere"],

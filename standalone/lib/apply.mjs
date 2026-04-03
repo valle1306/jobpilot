@@ -1,6 +1,7 @@
 import path from 'node:path';
 import {
   classifyRoleType,
+  resolveCodexApplyConfig,
   estimateYearsExperience,
   getCredentialForUrl,
   resolveRepoPath
@@ -14,9 +15,19 @@ import {
   promptForManualStep,
   tryClickByText
 } from './browser.mjs';
+import {
+  planApplyWithCodexCli,
+  shouldUseCodexApplyAssist
+} from './codex-apply.mjs';
 import { ensureUploadResumePath, tailorJob } from './tailor.mjs';
 import { logAppliedJob } from './runs.mjs';
-import { normalizeWhitespace, prompt, resolveEffectiveApplyUrl, truncate } from './utils.mjs';
+import {
+  getUrlHostname,
+  normalizeWhitespace,
+  prompt,
+  resolveEffectiveApplyUrl,
+  truncate
+} from './utils.mjs';
 
 function normalizeLabel(value) {
   return normalizeWhitespace(value).toLowerCase();
@@ -564,6 +575,194 @@ async function extractValidationIssues(page) {
   return issues;
 }
 
+function buildCandidateProfileForCodex({ profile, yearsExperience, effectiveResumePath, jobDetails }) {
+  return {
+    personal: {
+      firstName: profile.personal?.firstName || '',
+      lastName: profile.personal?.lastName || '',
+      fullName: normalizeWhitespace(
+        `${profile.personal?.firstName || ''} ${profile.personal?.lastName || ''}`
+      ),
+      email: profile.personal?.email || '',
+      phone: profile.personal?.phone || '',
+      website: profile.personal?.website || '',
+      linkedin: profile.personal?.linkedin || '',
+      github: profile.personal?.github || ''
+    },
+    address: {
+      street: profile.address?.street || '',
+      city: profile.address?.city || '',
+      state: profile.address?.state || '',
+      zipCode: profile.address?.zipCode || '',
+      country: profile.address?.country || ''
+    },
+    workAuthorization: {
+      usAuthorized: Boolean(profile.workAuthorization?.usAuthorized),
+      requiresSponsorship: Boolean(profile.workAuthorization?.requiresSponsorship),
+      visaStatus: profile.workAuthorization?.visaStatus || '',
+      optExtension: profile.workAuthorization?.optExtension || '',
+      willingToRelocate: Boolean(profile.workAuthorization?.willingToRelocate),
+      preferredLocations: profile.workAuthorization?.preferredLocations || []
+    },
+    eeo: profile.eeo ?? {},
+    autopilot: {
+      salaryExpectation: profile.autopilot?.salaryExpectation || '',
+      defaultStartDate: profile.autopilot?.defaultStartDate || '2 weeks notice'
+    },
+    applicationContext: {
+      yearsExperience,
+      resumePath: effectiveResumePath || '',
+      jobLocation: jobDetails.location || ''
+    }
+  };
+}
+
+async function captureCodexApplyState(page, fields, validationIssues, jobDetails) {
+  return page.evaluate(
+    ({ currentFields, currentIssues, currentJob }) => {
+      const isVisible = (element) => {
+        if (!element) {
+          return false;
+        }
+        const style = window.getComputedStyle(element);
+        if (style.display === 'none' || style.visibility === 'hidden') {
+          return false;
+        }
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+
+      const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
+      const buttons = [...document.querySelectorAll('button, a[role="button"], a[href], [role="link"]')]
+        .filter((element) => isVisible(element))
+        .map((element) => normalize(element.innerText || element.textContent || element.getAttribute('aria-label') || ''))
+        .filter(Boolean)
+        .slice(0, 24);
+
+      const headings = [...document.querySelectorAll('h1, h2, h3, legend')]
+        .filter((element) => isVisible(element))
+        .map((element) => normalize(element.innerText || element.textContent || ''))
+        .filter(Boolean)
+        .slice(0, 20);
+
+      const bodyText = normalize(document.body?.innerText || '').slice(0, 8000);
+
+      return {
+        url: window.location.href,
+        title: document.title,
+        headings,
+        visibleButtons: buttons,
+        visibleBodyText: bodyText,
+        fields: currentFields,
+        validationIssues: currentIssues,
+        jobDetails: currentJob
+      };
+    },
+    {
+      currentFields: fields,
+      currentIssues: validationIssues,
+      currentJob: jobDetails
+    }
+  );
+}
+
+function fieldLabelSignature(field) {
+  return normalizeLabel(`${field.label} ${field.name} ${field.placeholder}`);
+}
+
+function findFieldByTarget(fields, target) {
+  const normalizedTarget = normalizeLabel(target);
+  if (!normalizedTarget) {
+    return null;
+  }
+
+  const exact = fields.find(
+    (field) =>
+      normalizeLabel(field.label) === normalizedTarget ||
+      normalizeLabel(field.name) === normalizedTarget ||
+      normalizeLabel(field.placeholder) === normalizedTarget
+  );
+  if (exact) {
+    return exact;
+  }
+
+  return (
+    fields.find((field) => fieldLabelSignature(field).includes(normalizedTarget)) ||
+    fields.find((field) => normalizedTarget.includes(fieldLabelSignature(field)))
+  );
+}
+
+async function applyCodexActions(page, fields, actions) {
+  const applied = [];
+  let clickedAction = '';
+  let clickedSubmit = false;
+
+  for (const action of actions) {
+    if (!action?.kind || action.kind === 'none') {
+      continue;
+    }
+
+    try {
+      if (action.kind === 'click_text') {
+        const clicked = await tryClickByText(page, [action.target || action.value]);
+        if (clicked) {
+          clickedAction = action.target || action.value || '';
+          clickedSubmit = /submit|finish/i.test(clickedAction);
+          applied.push({
+            kind: action.kind,
+            target: action.target || action.value || '',
+            rationale: action.rationale || ''
+          });
+          await page.waitForTimeout(1800);
+        }
+        continue;
+      }
+
+      if (action.kind === 'wait') {
+        const waitMs = Math.min(5000, Math.max(500, Number(action.value) || 1200));
+        await page.waitForTimeout(waitMs);
+        applied.push({
+          kind: action.kind,
+          target: '',
+          rationale: action.rationale || ''
+        });
+        continue;
+      }
+
+      const field = findFieldByTarget(fields, action.target);
+      if (!field) {
+        continue;
+      }
+
+      const answer =
+        action.kind === 'set_checkbox'
+          ? { kind: 'boolean', value: /^(true|yes|1|checked)$/i.test(action.value || 'true') }
+          : action.kind === 'select_field'
+            ? { kind: 'select', value: action.value }
+            : { kind: 'text', value: action.value };
+
+      const filled = await fillField(page, field, answer);
+      if (!filled) {
+        continue;
+      }
+
+      applied.push({
+        kind: action.kind,
+        target: action.target,
+        rationale: action.rationale || ''
+      });
+    } catch {
+      // Keep going through the remaining actions.
+    }
+  }
+
+  return {
+    applied,
+    clickedAction,
+    clickedSubmit
+  };
+}
+
 export async function applyToJob({
   profile,
   url,
@@ -585,6 +784,19 @@ export async function applyToJob({
   try {
     const page = await browserContext.newPage();
     const targetUrl = resolveEffectiveApplyUrl(job) || url;
+    const applyHost = getUrlHostname(targetUrl);
+    const codexAssistConfig = resolveCodexApplyConfig(profile);
+    const useCodexAssist = shouldUseCodexApplyAssist(targetUrl, profile);
+    let codexAssistRounds = 0;
+    let codexAssistUsed = false;
+    const codexAssistSummaries = [];
+
+    const buildResultMetadata = () => ({
+      assistantUsed: codexAssistUsed,
+      assistantProvider: codexAssistUsed ? 'codex-cli' : '',
+      assistantSummary: codexAssistSummaries.filter(Boolean).join(' | ')
+    });
+
     await gotoAndSettle(page, targetUrl);
 
     let jobDetails = {
@@ -607,12 +819,20 @@ export async function applyToJob({
           job: jobDetails,
           filledFields: [],
           resumePath: '',
-          failReason: error.message
+          failReason: error.message,
+          ...buildResultMetadata()
         };
       }
     }
 
-    if (await detectLoginPage(page)) {
+    let loginRequired = await detectLoginPage(page);
+    if (loginRequired && (useCodexAssist || isWorkdayUrl(page.url()))) {
+      await ensureApplicationForm(page);
+      await page.waitForTimeout(1200);
+      loginRequired = await detectLoginPage(page);
+    }
+
+    if (loginRequired) {
       const loggedIn = await attemptLogin(page, getCredentialForUrl(profile, page.url()));
       await page.waitForTimeout(2000);
       if (await detectLoginPage(page)) {
@@ -624,7 +844,8 @@ export async function applyToJob({
             resumePath: '',
             failReason: loggedIn
               ? 'Additional verification is required before applying.'
-              : 'Login is required before applying.'
+              : 'Login is required before applying.',
+            ...buildResultMetadata()
           };
         }
 
@@ -649,7 +870,8 @@ export async function applyToJob({
             resumePath: '',
             failReason: loggedIn
               ? 'Additional verification is required before applying.'
-              : 'Login is still required after opening the application flow.'
+              : 'Login is still required after opening the application flow.',
+            ...buildResultMetadata()
           };
         }
 
@@ -708,7 +930,8 @@ export async function applyToJob({
             job: jobDetails,
             filledFields,
             resumePath: effectiveResumePath,
-            failReason: error.message
+            failReason: error.message,
+            ...buildResultMetadata()
           };
         }
       }
@@ -742,6 +965,94 @@ export async function applyToJob({
         }
       }
 
+      const validationIssues = await extractValidationIssues(page);
+      if (useCodexAssist && codexAssistRounds < codexAssistConfig.maxRounds) {
+        try {
+          const pageState = await captureCodexApplyState(
+            page,
+            fields,
+            validationIssues,
+            jobDetails
+          );
+          const codexPlan = await planApplyWithCodexCli({
+            profile,
+            job: { ...jobDetails, url: targetUrl },
+            host: applyHost,
+            pageState,
+            candidateProfile: buildCandidateProfileForCodex({
+              profile,
+              yearsExperience,
+              effectiveResumePath,
+              jobDetails
+            }),
+            round: codexAssistRounds + 1
+          });
+
+          codexAssistRounds += 1;
+          if (codexPlan.summary) {
+            codexAssistSummaries.push(codexPlan.summary);
+          }
+
+          if (codexPlan.pauseForHuman) {
+            codexAssistUsed = true;
+            if (!allowManualPrompt) {
+              return {
+                status: 'manual-step-required',
+                job: jobDetails,
+                filledFields,
+                resumePath: effectiveResumePath,
+                failReason: codexPlan.pauseReason || 'Codex apply assistant requires a manual step.',
+                ...buildResultMetadata()
+              };
+            }
+
+            await promptForManualStep(
+              codexPlan.pauseReason || 'Codex apply assistant needs a manual step before continuing.',
+              { allowPrompt: allowManualPrompt }
+            );
+
+            await page.waitForTimeout(1200);
+            continue;
+          }
+
+          const codexExecution = await applyCodexActions(page, fields, codexPlan.actions);
+          if (codexExecution.applied.length > 0) {
+            codexAssistUsed = true;
+            for (const action of codexExecution.applied) {
+              filledFields.push({
+                label: action.target || action.kind,
+                kind: `codex-${action.kind}`
+              });
+            }
+          }
+
+          if (codexExecution.clickedAction) {
+            await page.waitForTimeout(2000);
+            const success = await detectSuccess(page);
+            if (success) {
+              await logAppliedJob({
+                url: targetUrl,
+                title: jobDetails.title || 'Unknown title',
+                company: jobDetails.company || 'Unknown company',
+                source,
+                runId
+              });
+              return {
+                status: 'applied',
+                job: jobDetails,
+                filledFields,
+                resumePath: effectiveResumePath,
+                ...buildResultMetadata()
+              };
+            }
+
+            continue;
+          }
+        } catch (error) {
+          codexAssistSummaries.push(`Codex apply assist warning: ${error.message}`);
+        }
+      }
+
       const action = await chooseAction(page);
       if (!action) {
         break;
@@ -753,7 +1064,8 @@ export async function applyToJob({
             status: 'ready',
             job: jobDetails,
             filledFields,
-            resumePath: effectiveResumePath
+            resumePath: effectiveResumePath,
+            ...buildResultMetadata()
           };
         }
 
@@ -766,7 +1078,8 @@ export async function applyToJob({
               status: 'cancelled',
               job: jobDetails,
               filledFields,
-              resumePath: effectiveResumePath
+              resumePath: effectiveResumePath,
+              ...buildResultMetadata()
             };
           }
         }
@@ -786,7 +1099,8 @@ export async function applyToJob({
             status: 'applied',
             job: jobDetails,
             filledFields,
-            resumePath: effectiveResumePath
+            resumePath: effectiveResumePath,
+            ...buildResultMetadata()
           };
         }
 
@@ -794,7 +1108,8 @@ export async function applyToJob({
           status: 'submitted-unknown',
           job: jobDetails,
           filledFields,
-          resumePath: effectiveResumePath
+          resumePath: effectiveResumePath,
+          ...buildResultMetadata()
         };
       }
 
@@ -812,7 +1127,8 @@ export async function applyToJob({
       job: jobDetails,
       filledFields,
       resumePath: effectiveResumePath,
-      failReason: incompleteReason
+      failReason: incompleteReason,
+      ...buildResultMetadata()
     };
   } finally {
     if (ownsContext) {
