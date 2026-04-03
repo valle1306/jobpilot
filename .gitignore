@@ -10,6 +10,7 @@ runs/
 applied-jobs.json
 snapshot-*.md
 overleaf-resume/
+overleaf-resume-backup-*/
 resumes/tailored/
 # Resume .tex files contain personal info — keep local only
 *.tex

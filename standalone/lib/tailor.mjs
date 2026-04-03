@@ -103,6 +103,80 @@ async function runGit(args, cwd) {
   await execFileAsync('git', args, { cwd });
 }
 
+async function runGitWithOutput(args, cwd) {
+  try {
+    const result = await execFileAsync('git', args, { cwd });
+    return {
+      ok: true,
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? ''
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: error.stdout ?? '',
+      stderr: error.stderr ?? '',
+      error
+    };
+  }
+}
+
+function gitOutputIncludes(gitResult, pattern) {
+  const haystack = `${gitResult?.stdout ?? ''}\n${gitResult?.stderr ?? ''}`.toLowerCase();
+  return haystack.includes(String(pattern).toLowerCase());
+}
+
+async function syncOverleafClone(clonePath) {
+  const syncResult = await runGitWithOutput(['pull', '--rebase', 'origin', 'master'], clonePath);
+  if (syncResult.ok) {
+    return;
+  }
+
+  if (gitOutputIncludes(syncResult, 'cannot pull with rebase')) {
+    throw new Error(
+      'Overleaf sync could not rebase because the local clone has unresolved changes. Resolve the rebase in overleaf-resume and rerun JobPilot.'
+    );
+  }
+
+  if (gitOutputIncludes(syncResult, 'conflict') || gitOutputIncludes(syncResult, 'could not apply')) {
+    await runGitWithOutput(['rebase', '--abort'], clonePath);
+    throw new Error(
+      'Overleaf sync hit a merge conflict while rebasing local resume changes onto the latest remote project. Resolve the conflict in overleaf-resume and rerun JobPilot.'
+    );
+  }
+
+  throw new Error(
+    `Failed to sync the Overleaf clone before tailoring. ${syncResult.stderr || syncResult.stdout || syncResult.error?.message || ''}`.trim()
+  );
+}
+
+async function pushOverleafClone(clonePath) {
+  const firstPush = await runGitWithOutput(['push', 'origin', 'master'], clonePath);
+  if (firstPush.ok) {
+    return;
+  }
+
+  if (
+    gitOutputIncludes(firstPush, 'fetch first') ||
+    gitOutputIncludes(firstPush, 'non-fast-forward') ||
+    gitOutputIncludes(firstPush, 'failed to push some refs')
+  ) {
+    await syncOverleafClone(clonePath);
+    const secondPush = await runGitWithOutput(['push', 'origin', 'master'], clonePath);
+    if (secondPush.ok) {
+      return;
+    }
+
+    throw new Error(
+      `Failed to push the tailored resume to Overleaf after rebasing onto the latest remote changes. ${secondPush.stderr || secondPush.stdout || secondPush.error?.message || ''}`.trim()
+    );
+  }
+
+  throw new Error(
+    `Failed to push the tailored resume to Overleaf. ${firstPush.stderr || firstPush.stdout || firstPush.error?.message || ''}`.trim()
+  );
+}
+
 async function detectOverleafAuthRequired(page) {
   const url = page.url().toLowerCase();
   if (
@@ -390,9 +464,14 @@ export async function tailorJob({
     throw new Error('Overleaf clone path or tex file mapping is not configured.');
   }
 
+  await syncOverleafClone(clonePath);
+
   const texPath = path.join(clonePath, texFile);
   const mainTexPath = path.join(clonePath, 'main.tex');
-  const originalTex = await fs.readFile(texPath, 'utf8');
+  const configuredSourcePath = preferredResumePath(profile, roleType);
+  const sourceTexPath =
+    configuredSourcePath && /\.tex$/i.test(configuredSourcePath) ? configuredSourcePath : texPath;
+  const originalTex = await fs.readFile(sourceTexPath, 'utf8');
   const codexConfig = resolveCodexConfig(profile);
   const openAIConfig = resolveOpenAIConfig(profile);
 
@@ -468,7 +547,7 @@ export async function tailorJob({
     await runGit(['diff', '--cached', '--quiet'], clonePath);
   } catch {
     await runGit(['commit', '-m', commitMessage], clonePath);
-    await runGit(['push', 'origin', 'master'], clonePath);
+    await pushOverleafClone(clonePath);
     try {
       await runGit(['tag', '-f', tag], clonePath);
       await runGit(['push', 'origin', '--force', tag], clonePath);

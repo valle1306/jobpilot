@@ -42,6 +42,12 @@ if (-not (Test-Path $clonePath)) {
   }
 }
 
+Write-Output "Rebasing local Overleaf clone onto the latest remote changes ..."
+& git -C $clonePath pull --rebase origin master
+if ($LASTEXITCODE -ne 0) {
+  throw "git pull --rebase failed in $clonePath"
+}
+
 Write-Output "Syncing local resume templates into $clonePath ..."
 
 $copied = New-Object System.Collections.Generic.List[string]
@@ -111,7 +117,16 @@ if ($LASTEXITCODE -ne 0) {
 Write-Output "Pushing synced templates to Overleaf ..."
 & git -C $clonePath push origin master
 if ($LASTEXITCODE -ne 0) {
-  throw "git push failed in $clonePath"
+  Write-Output "Initial push was rejected. Rebasing and retrying once ..."
+  & git -C $clonePath pull --rebase origin master
+  if ($LASTEXITCODE -ne 0) {
+    throw "git push failed and git pull --rebase retry also failed in $clonePath"
+  }
+
+  & git -C $clonePath push origin master
+  if ($LASTEXITCODE -ne 0) {
+    throw "git push failed in $clonePath even after rebasing."
+  }
 }
 
 Write-Output "Synced templates:"
