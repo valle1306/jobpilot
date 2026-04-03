@@ -90,6 +90,7 @@ If the search boards show authwalls, Cloudflare, or other anti-bot pages, seed t
 To enable OpenAI-powered JD-aware resume tailoring in the standalone flow, set `OPENAI_API_KEY` in your environment or `.env`, then enable the `openai` block in `profile.json`.
 
 Unattended runs now prefer direct ATS/company apply URLs. Aggregator pages like LinkedIn are treated as discovery sources unless JobPilot can extract the external apply link.
+The current standalone defaults also disable `Indeed` and `Hiring Cafe` because both are frequently blocked in unattended browser sessions, and use `direct-ats-first` ranking so Greenhouse, Lever, and Workday-style apply links are prioritized.
 
 To create a Desktop shortcut for the unattended workflow:
 

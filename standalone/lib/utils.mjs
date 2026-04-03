@@ -68,6 +68,34 @@ function trimTrailingUrlPunctuation(value) {
   return String(value ?? '').replace(/[)\]}",.;]+$/g, '');
 }
 
+const preferredAtsHostPatterns = [
+  /(?:^|\.)greenhouse\.io$/i,
+  /(?:^|\.)lever\.co$/i,
+  /(?:^|\.)myworkdayjobs\.com$/i,
+  /(?:^|\.)myworkdaysite\.com$/i,
+  /(?:^|\.)workdayjobs\.com$/i
+];
+
+const atsHostPatterns = [
+  ...preferredAtsHostPatterns,
+  /(?:^|\.)ashbyhq\.com$/i,
+  /(?:^|\.)smartrecruiters\.com$/i,
+  /(?:^|\.)workable\.com$/i,
+  /(?:^|\.)jobvite\.com$/i,
+  /(?:^|\.)icims\.com$/i,
+  /(?:^|\.)avature\.net$/i,
+  /(?:^|\.)oraclecloud\.com$/i,
+  /(?:^|\.)contacthr\.com$/i,
+  /(?:^|\.)successfactors\.com$/i,
+  /(?:^|\.)dayforcehcm\.com$/i,
+  /(?:^|\.)bamboohr\.com$/i,
+  /(?:^|\.)paylocity\.com$/i,
+  /(?:^|\.)paycomonline\.net$/i,
+  /(?:^|\.)taleo\.net$/i,
+  /(?:^|\.)ultipro\.com$/i,
+  /(?:^|\.)csod\.com$/i
+];
+
 export function extractExternalJobUrl(rawUrl) {
   if (!rawUrl) {
     return '';
@@ -99,6 +127,19 @@ export function extractExternalJobUrl(rawUrl) {
     return url.toString();
   } catch {
     return String(rawUrl).trim();
+  }
+}
+
+export function getUrlHostname(rawUrl) {
+  if (!rawUrl) {
+    return '';
+  }
+
+  try {
+    const url = new URL(extractExternalJobUrl(rawUrl));
+    return url.hostname.toLowerCase();
+  } catch {
+    return '';
   }
 }
 
@@ -198,6 +239,80 @@ export function isAggregatorUrl(rawUrl) {
   } catch {
     return false;
   }
+}
+
+export function isPreferredAtsHost(hostname = '', preferredDomains = []) {
+  const normalized = String(hostname ?? '').toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const configured = preferredDomains.some((domain) => {
+    const normalizedDomain = String(domain ?? '').toLowerCase().trim();
+    return normalizedDomain && normalized.includes(normalizedDomain);
+  });
+  if (configured) {
+    return true;
+  }
+
+  return preferredAtsHostPatterns.some((pattern) => pattern.test(normalized));
+}
+
+export function isAtsHost(hostname = '') {
+  const normalized = String(hostname ?? '').toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return atsHostPatterns.some((pattern) => pattern.test(normalized));
+}
+
+export function getDirectApplyTier(rawUrl, preferredDomains = []) {
+  if (!rawUrl) {
+    return 0;
+  }
+
+  if (isAggregatorUrl(rawUrl)) {
+    return 0;
+  }
+
+  const hostname = getUrlHostname(rawUrl);
+  if (!hostname) {
+    return 0;
+  }
+
+  if (isPreferredAtsHost(hostname, preferredDomains)) {
+    return 3;
+  }
+
+  if (isAtsHost(hostname)) {
+    return 2;
+  }
+
+  return 1;
+}
+
+function collapseRepeatedLeadingPhrase(value) {
+  const normalized = normalizeWhitespace(value);
+  const repeated = normalized.match(/^(.{6,}?)\s+\1(?:\s+|$)(.*)$/i);
+  if (!repeated) {
+    return normalized;
+  }
+
+  const suffix = normalizeWhitespace(repeated[2] || '');
+  return normalizeWhitespace(`${repeated[1]} ${suffix}`);
+}
+
+export function cleanJobTitle(value) {
+  let normalized = normalizeWhitespace(value)
+    .replace(/\bwith verification\b/gi, '')
+    .replace(/\bverified job\b/gi, '')
+    .replace(/\s+\|\s+linkedin$/i, '')
+    .replace(/\s+on linkedin$/i, '')
+    .trim();
+
+  normalized = collapseRepeatedLeadingPhrase(normalized);
+  return normalizeWhitespace(normalized);
 }
 
 export function slugify(value) {

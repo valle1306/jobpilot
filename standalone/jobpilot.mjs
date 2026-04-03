@@ -25,6 +25,8 @@ import {
 import { bootstrapOverleafSession, tailorJob } from './lib/tailor.mjs';
 import {
   canonicalizeJobUrl,
+  getDirectApplyTier,
+  getUrlHostname,
   normalizeWhitespace,
   prompt,
   truncate,
@@ -65,10 +67,10 @@ Usage:
   node standalone/jobpilot.mjs setup [--bootstrap-overleaf]
   node standalone/jobpilot.mjs overleaf-login
   node standalone/jobpilot.mjs search-bootstrap
-  node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless]
+  node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless] [--search-mode direct-ats-first]
   node standalone/jobpilot.mjs tailor <job-url> [--headless] [--no-download]
   node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless]
-  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--limit 10]
+  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--limit 10] [--search-mode direct-ats-first]
   node standalone/jobpilot.mjs autopilot "manual batch" --file jobs-to-apply.txt [--yes] [--submit] [--resume resume.pdf]
   node standalone/jobpilot.mjs autorun
 `);
@@ -145,6 +147,7 @@ async function commandSearch(query, flags) {
   await ensureWorkingDirs();
   const { text: resumeText } = await readResumeText(profile);
   const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
+  const standaloneConfig = profile.standalone ?? {};
 
   try {
     const jobs = await searchJobs({
@@ -154,11 +157,16 @@ async function commandSearch(query, flags) {
       limit: Number(flags.limit ?? 12),
       resumeText
     });
+    const rankedJobs = rankSearchResults(
+      jobs,
+      flags['search-mode'] ?? standaloneConfig.searchMode,
+      resolvePreferredAtsDomains(standaloneConfig)
+    );
     console.log(`\nSearch results for "${query}"\n`);
-    console.log(renderSearchTable(jobs));
-    if (jobs.length > 0) {
+    console.log(renderSearchTable(rankedJobs));
+    if (rankedJobs.length > 0) {
       console.log('\nTop links:\n');
-      console.log(renderSearchLinks(jobs));
+      console.log(renderSearchLinks(rankedJobs));
     }
   } finally {
     await context.close().catch(() => {});
@@ -388,6 +396,65 @@ function resolveRequireDirectApply(standaloneConfig = {}, flags = {}) {
   return Boolean(flags.submit) || Boolean(flags.headless) || Boolean(flags.yes);
 }
 
+function resolveSearchMode(rawValue = 'balanced') {
+  const normalized = String(rawValue ?? 'balanced').trim().toLowerCase();
+  if (normalized === 'direct-ats-first') {
+    return 'direct-ats-first';
+  }
+
+  return 'balanced';
+}
+
+function resolvePreferredAtsDomains(standaloneConfig = {}) {
+  const configured = Array.isArray(standaloneConfig.preferredAtsDomains)
+    ? standaloneConfig.preferredAtsDomains
+    : [];
+
+  if (configured.length > 0) {
+    return configured
+      .map((value) => String(value ?? '').trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  return [
+    'greenhouse.io',
+    'lever.co',
+    'myworkdayjobs.com',
+    'myworkdaysite.com',
+    'workdayjobs.com'
+  ];
+}
+
+function rankSearchResults(jobs, rawSearchMode = 'balanced', preferredDomains = []) {
+  const searchMode = resolveSearchMode(rawSearchMode);
+  if (searchMode !== 'direct-ats-first') {
+    return jobs;
+  }
+
+  return [...jobs]
+    .sort((left, right) => {
+      const tierDiff =
+        getDirectApplyTier(right.applyUrl, preferredDomains) -
+        getDirectApplyTier(left.applyUrl, preferredDomains);
+      if (tierDiff !== 0) {
+        return tierDiff;
+      }
+
+      const scoreDiff = (right.matchScore ?? 0) - (left.matchScore ?? 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      return String(left.title ?? '').localeCompare(String(right.title ?? ''));
+    })
+    .map((job, index) => ({
+      ...job,
+      id: index + 1,
+      applyTier: getDirectApplyTier(job.applyUrl, preferredDomains),
+      applyHost: getUrlHostname(job.applyUrl)
+    }));
+}
+
 function applyAutopilotFilters(
   jobs,
   profile,
@@ -573,7 +640,9 @@ async function searchAcrossQueries({
   queries,
   limit,
   resumeText,
-  allowManualPrompt = true
+  allowManualPrompt = true,
+  searchMode = 'balanced',
+  preferredAtsDomains = []
 }) {
   const aggregated = [];
 
@@ -596,8 +665,11 @@ async function searchAcrossQueries({
     });
 
     const directApplyCount = jobs.filter((job) => job.applyUrl && job.applyUrl !== job.url).length;
+    const preferredAtsCount = jobs.filter(
+      (job) => getDirectApplyTier(job.applyUrl, preferredAtsDomains) >= 3
+    ).length;
     console.log(
-      `  Query summary: ${jobs.length} candidates after board dedupe, ${directApplyCount} with direct apply links`
+      `  Query summary: ${jobs.length} candidates after board dedupe, ${directApplyCount} with direct apply links, ${preferredAtsCount} on preferred ATS hosts`
     );
 
     aggregated.push(
@@ -608,7 +680,7 @@ async function searchAcrossQueries({
     );
   }
 
-  return mergeSearchResults(aggregated);
+  return rankSearchResults(mergeSearchResults(aggregated), searchMode, preferredAtsDomains);
 }
 
 async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
@@ -637,6 +709,8 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     maxApplications
   );
   const requireDirectApply = resolveRequireDirectApply(standaloneConfig, flags);
+  const searchMode = resolveSearchMode(flags['search-mode'] ?? standaloneConfig.searchMode);
+  const preferredAtsDomains = resolvePreferredAtsDomains(standaloneConfig);
 
   const { runPath, run } = await createRunFile(runQuery, {
     minMatchScore,
@@ -644,7 +718,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     queries,
     searchLimitPerQuery: perQueryLimit,
     allowManualPrompt,
-    requireDirectApply
+    requireDirectApply,
+    searchMode,
+    preferredAtsDomains
   });
 
   try {
@@ -661,12 +737,18 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
           queries,
           limit: perQueryLimit,
           resumeText,
-          allowManualPrompt
+          allowManualPrompt,
+          searchMode,
+          preferredAtsDomains
         });
 
-    run.jobs = applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore, {
+    run.jobs = rankSearchResults(
+      applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore, {
       requireDirectApply
-    });
+      }),
+      searchMode,
+      preferredAtsDomains
+    );
     await saveRun(runPath, run);
 
     const pendingCandidates = run.jobs.filter((job) => job.status === 'pending');
@@ -685,8 +767,11 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     const directApplyCount = approvedCandidates.filter(
       (job) => job.applyUrl && job.applyUrl !== job.url
     ).length;
+    const preferredAtsCount = approvedCandidates.filter(
+      (job) => getDirectApplyTier(job.applyUrl, preferredAtsDomains) >= 3
+    ).length;
     console.log(
-      `Qualified ${approvedCandidates.length} jobs for apply. ${directApplyCount} will use direct company application URLs.`
+      `Qualified ${approvedCandidates.length} jobs for apply. ${directApplyCount} will use direct company application URLs, ${preferredAtsCount} on preferred ATS hosts.`
     );
 
     let approvedIds = approvedCandidates.map((job) => job.id);
@@ -724,7 +809,11 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
         `Applying ${index + 1}/${approvedJobs.length}: ${truncate(job.title, 56)} at ${truncate(job.company, 32)}`
       );
       if (job.applyUrl && job.applyUrl !== job.url) {
+        const applyHost = getUrlHostname(job.applyUrl);
         console.log(`  Direct apply URL: ${job.applyUrl}`);
+        if (applyHost) {
+          console.log(`  Apply host: ${applyHost}`);
+        }
       } else {
         console.log(`  Source URL: ${job.url}`);
       }
@@ -836,7 +925,8 @@ async function commandAutorun() {
       5,
     file: standaloneConfig.mode === 'file' ? standaloneConfig.filePath : '',
     resume: standaloneConfig.resumePath ?? '',
-    'search-limit': standaloneConfig.searchLimitPerQuery ?? ''
+    'search-limit': standaloneConfig.searchLimitPerQuery ?? '',
+    'search-mode': standaloneConfig.searchMode ?? ''
   };
 
   await runAutopilot(profile, query, flags, standaloneConfig);

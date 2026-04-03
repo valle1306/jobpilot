@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { dedupeJobs } from '../lib/scoring.mjs';
 import {
   canonicalizeJobUrl,
+  cleanJobTitle,
   extractExternalJobUrl,
+  getDirectApplyTier,
   extractKnownDirectJobUrl,
   isAggregatorUrl
 } from '../lib/utils.mjs';
@@ -40,6 +42,23 @@ test('extractKnownDirectJobUrl finds ATS links embedded in escaped page HTML', (
   assert.equal(
     extractKnownDirectJobUrl(html),
     'https://boards.greenhouse.io/acme/jobs/123?gh_src=linkedin'
+  );
+});
+
+test('getDirectApplyTier prioritizes preferred ATS domains ahead of generic external sites', () => {
+  assert.equal(getDirectApplyTier('https://boards.greenhouse.io/acme/jobs/123'), 3);
+  assert.equal(getDirectApplyTier('https://jobs.lever.co/acme/123'), 3);
+  assert.equal(getDirectApplyTier('https://ibmglobal.avature.net/en_US/careers/JobDetail?jobId=87026'), 2);
+  assert.equal(getDirectApplyTier('https://company.example/jobs/123'), 1);
+  assert.equal(getDirectApplyTier('https://www.linkedin.com/jobs/view/123/apply/'), 0);
+});
+
+test('cleanJobTitle removes LinkedIn verification suffixes and duplicate titles', () => {
+  assert.equal(
+    cleanJobTitle(
+      'Data Scientist Associate - Payments Data Scientist Associate - Payments with verification'
+    ),
+    'Data Scientist Associate - Payments'
   );
 });
 

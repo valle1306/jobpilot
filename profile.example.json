@@ -69,7 +69,7 @@
       "domain": "indeed.com",
       "searchUrl": "https://www.indeed.com/jobs",
       "type": "search",
-      "enabled": true,
+      "enabled": false,
       "email": "",
       "password": ""
     },
@@ -87,7 +87,7 @@
       "domain": "hiring.cafe",
       "searchUrl": "https://hiring.cafe/jobs",
       "type": "search",
-      "enabled": true,
+      "enabled": false,
       "email": "",
       "password": ""
     },
@@ -159,10 +159,18 @@
     "headless": true,
     "autoApprove": true,
     "autoSubmit": true,
+    "searchMode": "direct-ats-first",
     "entryLevelOnly": true,
     "entryLevelMaxYears": 3,
     "preferredLocations": ["Anywhere"],
     "requireDirectApply": true,
+    "preferredAtsDomains": [
+      "greenhouse.io",
+      "lever.co",
+      "myworkdayjobs.com",
+      "myworkdaysite.com",
+      "workdayjobs.com"
+    ],
     "skipTitleKeywords": ["senior", "staff", "principal", "lead", "manager", "director"],
     "maxApplicationsPerRun": 0,
     "searchLimitPerQuery": 12,

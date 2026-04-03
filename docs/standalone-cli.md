@@ -51,6 +51,7 @@ Use `.\scripts\search-session-bootstrap.ps1` if LinkedIn, Indeed, or other searc
 
 ```powershell
 .\scripts\jobpilot-standalone.ps1 search "data scientist remote"
+.\scripts\jobpilot-standalone.ps1 search "entry level data analyst" --search-mode direct-ats-first
 ```
 
 ### Tailor a Resume
@@ -74,6 +75,7 @@ Query-based search:
 
 ```powershell
 .\scripts\jobpilot-standalone.ps1 autopilot "data scientist remote"
+.\scripts\jobpilot-standalone.ps1 autopilot "entry level data analyst" --yes --search-mode direct-ats-first
 ```
 
 File-driven batch mode:
@@ -100,10 +102,12 @@ Current `standalone` config supports:
 - `headless`: run the browser headlessly
 - `autoApprove`: skip batch confirmation
 - `autoSubmit`: submit application forms automatically
+- `searchMode`: `balanced` or `direct-ats-first`; the direct ATS mode ranks Greenhouse, Lever, and Workday-style hosts ahead of generic external apply links
 - `entryLevelOnly`: skip senior/staff/manager-style titles
 - `entryLevelMaxYears`: skip roles that explicitly ask for more than this many years of experience
 - `preferredLocations`: preferred locations for filtering; use `["Anywhere"]` or `[]` to disable location filtering
 - `requireDirectApply`: when `true`, unattended runs skip bare aggregator listings like LinkedIn pages unless a direct ATS/company apply URL was extracted
+- `preferredAtsDomains`: optional ATS hosts to prioritize in `direct-ats-first` mode
 - `skipTitleKeywords`: extra blocked title keywords
 - `maxApplicationsPerRun`: set to `0` to apply all currently qualified matches in the run
 - `searchLimitPerQuery`: how many jobs to hydrate per query before filtering
@@ -141,6 +145,7 @@ You can verify the shortcut status any time with:
 ## Current Scope
 
 - Search is best-effort and still needs adapter tuning per board.
+- The current standalone defaults disable `Indeed` and `Hiring Cafe` because both are frequently blocked by anti-bot challenges in unattended mode.
 - Tailoring in standalone mode can now use OpenAI for JD-aware bullet rewrites, but it still validates edits aggressively and falls back to the conservative path if an edit looks unsafe.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
 - Unattended runs work best with direct ATS/company URLs. Aggregator-only pages like LinkedIn are now treated as discovery sources unless JobPilot can extract a direct apply link.

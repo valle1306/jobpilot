@@ -9,8 +9,10 @@ import {
 import { dedupeJobs, scoreJob } from './scoring.mjs';
 import {
   canonicalizeJobUrl,
+  cleanJobTitle,
   extractExternalJobUrl,
   extractKnownDirectJobUrl,
+  getDirectApplyTier,
   isAggregatorUrl,
   normalizeWhitespace,
   truncate
@@ -76,6 +78,38 @@ async function genericSearchFill(page, parsed) {
 }
 
 async function extractCandidateLinks(page, board, limit = 15) {
+  if (board.domain.includes('linkedin.com')) {
+    const rawLinkedIn = await page.evaluate((innerLimit) => {
+      const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
+      const anchors = [...document.querySelectorAll('a[href*="/jobs/view/"]')];
+      const seen = new Set();
+      const results = [];
+
+      for (const anchor of anchors) {
+        const href = anchor.href;
+        const text = normalize(anchor.innerText || anchor.textContent || '');
+        if (!href || !text || seen.has(href)) {
+          continue;
+        }
+        if (href.includes('/jobs/collections/')) {
+          continue;
+        }
+
+        seen.add(href);
+        results.push({ url: href, title: text });
+        if (results.length >= innerLimit) {
+          break;
+        }
+      }
+
+      return results;
+    }, limit);
+
+    if (rawLinkedIn.length > 0) {
+      return rawLinkedIn;
+    }
+  }
+
   const raw = await page.evaluate(
     ({ boardDomain, limit: innerLimit }) => {
       const jobPatterns = [
@@ -101,7 +135,13 @@ async function extractCandidateLinks(page, board, limit = 15) {
         if (!href || !text) {
           continue;
         }
+        if (/^jobs$/i.test(text)) {
+          continue;
+        }
         if (/^\d[\d,+\s]*jobs?\b/i.test(text) || /\bjobs in\b/i.test(text)) {
+          continue;
+        }
+        if (/\/jobs\/?$/.test(new URL(href, window.location.href).pathname)) {
           continue;
         }
         if (/linkedin\.com\/jobs\/search/i.test(href) || /join linkedin/i.test(text)) {
@@ -358,7 +398,7 @@ async function hydrateJob(page, candidate, board) {
     ...candidate,
     url: canonicalSourceUrl || candidate.url,
     sourceUrl: candidate.url,
-    title: details.title || candidate.title,
+    title: cleanJobTitle(details.title || candidate.title),
     company: details.company || board.name,
     location: details.location,
     description: details.description,
@@ -369,6 +409,7 @@ async function hydrateJob(page, candidate, board) {
         : isAggregatorUrl(candidate.url)
           ? 'aggregator'
           : details.applySurface,
+    applyTier: getDirectApplyTier(resolvedApplyUrl),
     board: board.name,
     boardDomain: board.domain
   };
