@@ -101,9 +101,10 @@ Unattended runs now follow this order: discover jobs -> tailor with Codex CLI or
 The standalone flow now prefers Codex CLI for real file editing of the LaTeX resume before Overleaf compile, and still treats a deliberate no-op as a valid AI-tailoring result.
 LinkedIn is treated as a discovery source in unattended mode. Aggregator pages like LinkedIn are skipped unless JobPilot can extract a direct external apply link.
 The current standalone defaults also disable `Indeed` and `Hiring Cafe` because both are frequently blocked in unattended browser sessions, and use `direct-ats-first` ranking so Greenhouse, Lever, and Workday-style apply links are prioritized.
+Standalone search and autorun can also enforce a posting-age window such as `past 24 hours` through `standalone.postedWithinHours`.
 Redirector-style hosts such as `jobright.ai`, `appcast`, and similar non-ATS wrappers are also skipped in unattended mode, and repeated login/verification/incomplete failures on the same apply host are short-circuited for the rest of the run.
 The ATS filler now also handles hidden resume upload inputs better, which matters on sites like Lever where the visible upload control often wraps a hidden file field.
-Each autorun now writes both a machine-readable run JSON and a human-readable `*.summary.txt` file in `runs`, including applied, failed, skipped, and stage-specific totals.
+Each autorun now writes both a machine-readable run JSON and a human-readable `*.summary.txt` file in `runs`, including applied, failed, skipped, stage-specific totals, and skip buckets such as duplicate, no-direct-apply, and too-old postings.
 
 To create a Desktop shortcut for the unattended workflow:
 

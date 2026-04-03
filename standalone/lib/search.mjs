@@ -31,9 +31,68 @@ function getBoardSearchCredentials(board) {
   };
 }
 
-function buildSearchUrl(board, parsed) {
+export function normalizePostedWithinHours(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return 0;
+  }
+
+  return Math.max(1, Math.round(numeric));
+}
+
+export function estimatePostedHoursAgo({ postedText = '', postedDatetime = '' } = {}, nowMs = Date.now()) {
+  const normalizedText = normalizeWhitespace(String(postedText ?? '').toLowerCase());
+  const normalizedDatetime = String(postedDatetime ?? '').trim();
+
+  if (normalizedDatetime) {
+    const parsedTime = Date.parse(normalizedDatetime);
+    if (Number.isFinite(parsedTime)) {
+      const deltaMs = Math.max(0, nowMs - parsedTime);
+      return deltaMs / 3_600_000;
+    }
+  }
+
+  if (!normalizedText) {
+    return null;
+  }
+
+  if (
+    normalizedText.includes('just now') ||
+    normalizedText.includes('today') ||
+    normalizedText.includes('moments ago')
+  ) {
+    return 0;
+  }
+
+  if (normalizedText.includes('yesterday')) {
+    return 24;
+  }
+
+  const patterns = [
+    { regex: /(\d+)\s*(?:seconds?|secs?|s)\b/i, multiplier: 0 },
+    { regex: /(\d+)\s*(?:minutes?|mins?|m)\b/i, multiplier: 1 / 60 },
+    { regex: /(\d+)\s*(?:hours?|hrs?|h)\b/i, multiplier: 1 },
+    { regex: /(\d+)\s*(?:days?|d)\b/i, multiplier: 24 },
+    { regex: /(\d+)\s*(?:weeks?|wks?|w)\b/i, multiplier: 24 * 7 },
+    { regex: /(\d+)\s*(?:months?|mos?|mo)\b/i, multiplier: 24 * 30 }
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalizedText.match(pattern.regex);
+    if (!match) {
+      continue;
+    }
+
+    return Number(match[1]) * pattern.multiplier;
+  }
+
+  return null;
+}
+
+function buildSearchUrl(board, parsed, postedWithinHours = 0) {
   const base = board.searchUrl ?? '';
   const domain = board.domain ?? '';
+  const normalizedPostedWithinHours = normalizePostedWithinHours(postedWithinHours);
 
   if (domain.includes('linkedin.com')) {
     const url = new URL(base);
@@ -43,6 +102,10 @@ function buildSearchUrl(board, parsed) {
     if (parsed.location) {
       url.searchParams.set('location', parsed.location);
     }
+    if (normalizedPostedWithinHours > 0) {
+      url.searchParams.set('f_TPR', `r${normalizedPostedWithinHours * 3600}`);
+      url.searchParams.set('sortBy', 'DD');
+    }
     return url.toString();
   }
 
@@ -50,6 +113,10 @@ function buildSearchUrl(board, parsed) {
     const url = new URL(base);
     url.searchParams.set('q', parsed.keywords || parsed.raw);
     url.searchParams.set('l', parsed.location || '');
+    if (normalizedPostedWithinHours > 0) {
+      url.searchParams.set('fromage', String(Math.max(1, Math.ceil(normalizedPostedWithinHours / 24))));
+      url.searchParams.set('sort', 'date');
+    }
     return url.toString();
   }
 
@@ -89,6 +156,20 @@ async function extractCandidateLinks(page, board, limit = 15) {
       for (const anchor of anchors) {
         const href = anchor.href;
         const text = normalize(anchor.innerText || anchor.textContent || '');
+        const container =
+          anchor.closest('li') ||
+          anchor.closest('.jobs-search-results__list-item') ||
+          anchor.closest('.job-card-container') ||
+          anchor.parentElement;
+        const timeElement = container?.querySelector('time');
+        const postedText = normalize(
+          timeElement?.innerText ||
+            timeElement?.textContent ||
+            container?.querySelector('.job-search-card__listdate')?.textContent ||
+            container?.querySelector('.job-search-card__footer-wrapper')?.textContent ||
+            ''
+        );
+        const postedDatetime = normalize(timeElement?.getAttribute('datetime') || '');
         if (!href || !text || seen.has(href)) {
           continue;
         }
@@ -97,7 +178,7 @@ async function extractCandidateLinks(page, board, limit = 15) {
         }
 
         seen.add(href);
-        results.push({ url: href, title: text });
+        results.push({ url: href, title: text, postedText, postedDatetime });
         if (results.length >= innerLimit) {
           break;
         }
@@ -376,6 +457,17 @@ async function hydrateJob(page, candidate, board) {
           '.jobsearch-JobInfoHeader-subtitle div',
           '.location'
         ]) || '',
+      postedText:
+        pickText([
+          'time',
+          '.posted-time-ago__text',
+          '.jobs-unified-top-card__subtitle-secondary-grouping time',
+          '.jobs-unified-top-card__tertiary-description time',
+          '.jobsearch-JobMetadataFooter',
+          '.sort-by-time-posted'
+        ]) || '',
+      postedDatetime:
+        document.querySelector('time')?.getAttribute('datetime') || '',
       description: bodyText || '',
       applyUrl: externalApply?.href || internalApply?.href || '',
       applySurface: externalApply ? 'external' : internalApply ? 'internal' : 'none'
@@ -398,6 +490,9 @@ async function hydrateJob(page, candidate, board) {
   const fallbackDirectSourceUrl =
     canonicalSourceUrl && !isAggregatorUrl(canonicalSourceUrl) ? canonicalSourceUrl : '';
   const effectiveApplyUrl = canonicalApplyUrl || fallbackDirectSourceUrl;
+  const postedText = details.postedText || candidate.postedText || '';
+  const postedDatetime = details.postedDatetime || candidate.postedDatetime || '';
+  const postedHoursAgo = estimatePostedHoursAgo({ postedText, postedDatetime });
 
   return {
     ...candidate,
@@ -406,6 +501,9 @@ async function hydrateJob(page, candidate, board) {
     title: cleanJobTitle(details.title || candidate.title),
     company: details.company || board.name,
     location: details.location,
+    postedText,
+    postedDatetime,
+    postedHoursAgo,
     description: details.description,
     applyUrl: effectiveApplyUrl || '',
     applySurface: effectiveApplyUrl
@@ -441,11 +539,13 @@ export async function searchJobs({
   query,
   limit = 12,
   hydrateLimit = 8,
+  postedWithinHours = 0,
   resumeText,
   allowManualPrompt = true,
   onProgress = null
 }) {
   const parsed = parseSearchQuery(query);
+  const normalizedPostedWithinHours = normalizePostedWithinHours(postedWithinHours);
   const boards = getEnabledSearchBoards(profile);
   const aggregated = [];
 
@@ -453,7 +553,7 @@ export async function searchJobs({
     const page = await context.newPage();
     try {
       onProgress?.({ type: 'board-start', board: board.name, query });
-      const searchUrl = buildSearchUrl(board, parsed);
+      const searchUrl = buildSearchUrl(board, parsed, normalizedPostedWithinHours);
       await gotoAndSettle(page, searchUrl);
 
       const boardCredentials = getBoardSearchCredentials(board);
@@ -541,13 +641,25 @@ export async function searchJobs({
       (job.applyUrl && (await wasAlreadyApplied(job.applyUrl))) ||
       (await wasAlreadyApplied(job.url));
     const effectiveApplyUrl = resolveEffectiveApplyUrl(job);
+    const postedOutsideWindow =
+      normalizedPostedWithinHours > 0 &&
+      Number.isFinite(job.postedHoursAgo) &&
+      job.postedHoursAgo > normalizedPostedWithinHours;
     filtered.push({
       ...job,
       applyUrl: effectiveApplyUrl || '',
-      status: alreadyApplied ? 'skipped' : 'pending',
-      stage: alreadyApplied ? 'skipped' : 'discovered',
-      skipReason: alreadyApplied ? 'Already applied' : '',
-      skipCategory: alreadyApplied ? 'duplicate' : ''
+      status: alreadyApplied || postedOutsideWindow ? 'skipped' : 'pending',
+      stage: alreadyApplied || postedOutsideWindow ? 'skipped' : 'discovered',
+      skipReason: alreadyApplied
+        ? 'Already applied'
+        : postedOutsideWindow
+          ? `Posted outside the last ${normalizedPostedWithinHours} hours`
+          : '',
+      skipCategory: alreadyApplied
+        ? 'duplicate'
+        : postedOutsideWindow
+          ? 'posted-age'
+          : ''
     });
   }
 

@@ -68,10 +68,10 @@ Usage:
   node standalone/jobpilot.mjs setup [--bootstrap-overleaf] [--bootstrap-codex]
   node standalone/jobpilot.mjs overleaf-login
   node standalone/jobpilot.mjs search-bootstrap
-  node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless] [--search-mode direct-ats-first]
+  node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless] [--search-mode direct-ats-first] [--posted-within-hours 24]
   node standalone/jobpilot.mjs tailor <job-url> [--headless] [--no-download]
   node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless]
-  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--limit 10] [--search-mode direct-ats-first] [--apply-surface-policy external-only]
+  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--limit 10] [--search-mode direct-ats-first] [--apply-surface-policy external-only] [--posted-within-hours 24]
   node standalone/jobpilot.mjs autopilot "manual batch" --file jobs-to-apply.txt [--yes] [--submit] [--resume resume.pdf]
   node standalone/jobpilot.mjs autorun
 `);
@@ -152,6 +152,7 @@ async function commandSearch(query, flags) {
   const { text: resumeText } = await readResumeText(profile);
   const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
   const standaloneConfig = profile.standalone ?? {};
+  const postedWithinHours = resolvePostedWithinHours(standaloneConfig, flags);
 
   try {
     const jobs = await searchJobs({
@@ -159,6 +160,7 @@ async function commandSearch(query, flags) {
       profile,
       query,
       limit: Number(flags.limit ?? 12),
+      postedWithinHours,
       resumeText
     });
     const rankedJobs = rankSearchResults(
@@ -166,11 +168,24 @@ async function commandSearch(query, flags) {
       flags['search-mode'] ?? standaloneConfig.searchMode,
       resolvePreferredAtsDomains(standaloneConfig)
     );
+    const visibleJobs = rankedJobs.filter(
+      (job) => !['duplicate', 'posted-age'].includes(job.skipCategory || '')
+    );
+    const hiddenOlderCount = rankedJobs.filter((job) => job.skipCategory === 'posted-age').length;
+    const hiddenDuplicateCount = rankedJobs.filter((job) => job.skipCategory === 'duplicate').length;
     console.log(`\nSearch results for "${query}"\n`);
-    console.log(renderSearchTable(rankedJobs));
-    if (rankedJobs.length > 0) {
+    if (postedWithinHours > 0) {
+      console.log(`Filter: jobs posted within the last ${postedWithinHours} hours\n`);
+    }
+    if (hiddenOlderCount > 0 || hiddenDuplicateCount > 0) {
+      console.log(
+        `Hidden from the table: ${hiddenOlderCount} older than the posting window, ${hiddenDuplicateCount} already applied.\n`
+      );
+    }
+    console.log(renderSearchTable(visibleJobs));
+    if (visibleJobs.length > 0) {
       console.log('\nTop links:\n');
-      console.log(renderSearchLinks(rankedJobs));
+      console.log(renderSearchLinks(visibleJobs));
     }
   } finally {
     await context.close().catch(() => {});
@@ -496,6 +511,17 @@ function resolveFailurePolicy(standaloneConfig = {}, flags = {}) {
     .toLowerCase();
 
   return configured === 'continue-and-log' ? 'continue-and-log' : 'continue-and-log';
+}
+
+function resolvePostedWithinHours(standaloneConfig = {}, flags = {}) {
+  const value = Number(
+    flags['posted-within-hours'] ?? standaloneConfig.postedWithinHours ?? 0
+  );
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+
+  return Math.max(1, Math.round(value));
 }
 
 function withJobApplyMetadata(job, preferredDomains = []) {
@@ -824,6 +850,7 @@ async function searchAcrossQueries({
   profile,
   queries,
   limit,
+  postedWithinHours = 0,
   resumeText,
   allowManualPrompt = true,
   searchMode = 'balanced',
@@ -838,6 +865,7 @@ async function searchAcrossQueries({
       profile,
       query,
       limit,
+      postedWithinHours,
       resumeText,
       allowManualPrompt,
       onProgress: (event) => {
@@ -850,12 +878,17 @@ async function searchAcrossQueries({
     });
 
     const rankedJobs = rankSearchResults(jobs, searchMode, preferredAtsDomains);
-    const directApplyCount = rankedJobs.filter((job) => Boolean(job.applyUrl)).length;
-    const preferredAtsCount = rankedJobs.filter(
+    const eligibleJobs = rankedJobs.filter(
+      (job) => !['duplicate', 'posted-age'].includes(job.skipCategory || '')
+    );
+    const tooOldCount = rankedJobs.filter((job) => job.skipCategory === 'posted-age').length;
+    const duplicateCount = rankedJobs.filter((job) => job.skipCategory === 'duplicate').length;
+    const directApplyCount = eligibleJobs.filter((job) => Boolean(job.applyUrl)).length;
+    const preferredAtsCount = eligibleJobs.filter(
       (job) => getDirectApplyTier(resolveEffectiveApplyUrl(job), preferredAtsDomains) >= 3
     ).length;
     console.log(
-      `  Query summary: ${rankedJobs.length} candidates after board dedupe, ${directApplyCount} with direct external apply targets, ${preferredAtsCount} on preferred ATS hosts`
+      `  Query summary: ${eligibleJobs.length} candidates after board dedupe, ${directApplyCount} with direct external apply targets, ${preferredAtsCount} on preferred ATS hosts${tooOldCount > 0 ? `, ${tooOldCount} older than the posting window` : ''}${duplicateCount > 0 ? `, ${duplicateCount} already applied` : ''}`
     );
 
     aggregated.push(
@@ -901,6 +934,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   const requiredTailoringProvider = resolveRequiredTailoringProvider(standaloneConfig, flags);
   const runLoopMode = resolveRunLoopMode(standaloneConfig, flags);
   const failurePolicy = resolveFailurePolicy(standaloneConfig, flags);
+  const postedWithinHours = resolvePostedWithinHours(standaloneConfig, flags);
 
   const { runPath, run } = await createRunFile(runQuery, {
     minMatchScore,
@@ -913,6 +947,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     requireDirectApply,
     applySurfacePolicy,
     searchMode,
+    postedWithinHours,
     preferredAtsDomains,
     requiredTailoringProvider
   });
@@ -931,6 +966,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
           profile,
           queries,
           limit: perQueryLimit,
+          postedWithinHours,
           resumeText,
           allowManualPrompt,
           searchMode,
@@ -966,6 +1002,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     console.log(
       `Qualified ${approvedCandidates.length} jobs for apply. ${directApplyCount} have direct external apply targets, ${preferredAtsCount} are on preferred ATS hosts.`
     );
+    if (postedWithinHours > 0) {
+      console.log(`Recency filter: only jobs from the last ${postedWithinHours} hours are eligible when posting age is available.`);
+    }
 
     let approvedIds = approvedCandidates.map((job) => job.id);
     if (!flags.yes) {
@@ -1176,6 +1215,7 @@ async function commandAutorun() {
     file: standaloneConfig.mode === 'file' ? standaloneConfig.filePath : '',
     resume: standaloneConfig.resumePath ?? '',
     'search-limit': standaloneConfig.searchLimitPerQuery ?? '',
+    'posted-within-hours': standaloneConfig.postedWithinHours ?? '',
     'search-mode': standaloneConfig.searchMode ?? '',
     'apply-surface-policy': standaloneConfig.applySurfacePolicy ?? '',
     'run-loop-mode': standaloneConfig.runLoopMode ?? '',

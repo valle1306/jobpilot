@@ -46,19 +46,28 @@ test('buildRunSummary counts stage-specific skips and failures', () => {
         stage: 'skipped',
         skipCategory: 'duplicate',
         skipReason: 'Already applied'
+      },
+      {
+        id: 6,
+        title: 'Business Analyst',
+        status: 'skipped',
+        stage: 'skipped',
+        skipCategory: 'posted-age',
+        skipReason: 'Posted outside the last 24 hours'
       }
     ]
   };
 
   const summary = buildRunSummary(run);
 
-  assert.equal(summary.totalFound, 5);
+  assert.equal(summary.totalFound, 6);
   assert.equal(summary.qualified, 3);
   assert.equal(summary.applied, 1);
   assert.equal(summary.failed, 2);
-  assert.equal(summary.skipped, 2);
+  assert.equal(summary.skipped, 3);
   assert.equal(summary.skippedNoDirectApply, 1);
   assert.equal(summary.skippedDuplicate, 1);
+  assert.equal(summary.skippedPostedAge, 1);
   assert.equal(summary.failedTailoring, 1);
   assert.equal(summary.failedApplication, 1);
   assert.equal(summary.stageCounts.applied, 1);
@@ -86,6 +95,7 @@ test('buildRunSummaryText includes top failure reasons and bucket totals', () =>
   });
 
   assert.match(text, /failed during application\/login\/form handling: 1/);
+  assert.match(text, /skipped for being older than the configured posting window: 0/);
   assert.match(text, /Top failure causes:/);
   assert.match(text, /Login is required before applying\./);
 });

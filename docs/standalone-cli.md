@@ -64,6 +64,7 @@ Use `.\scripts\search-session-bootstrap.ps1` if LinkedIn, Indeed, or other searc
 ```powershell
 .\scripts\jobpilot-standalone.ps1 search "data scientist remote"
 .\scripts\jobpilot-standalone.ps1 search "entry level data analyst" --search-mode direct-ats-first
+.\scripts\jobpilot-standalone.ps1 search "entry level data analyst" --search-mode direct-ats-first --posted-within-hours 24
 ```
 
 ### Tailor a Resume
@@ -88,6 +89,7 @@ Query-based search:
 ```powershell
 .\scripts\jobpilot-standalone.ps1 autopilot "data scientist remote"
 .\scripts\jobpilot-standalone.ps1 autopilot "entry level data analyst" --yes --search-mode direct-ats-first
+.\scripts\jobpilot-standalone.ps1 autopilot "entry level data analyst" --yes --search-mode direct-ats-first --posted-within-hours 24
 ```
 
 File-driven batch mode:
@@ -118,6 +120,7 @@ Current `standalone` config supports:
 - `failurePolicy`: currently `continue-and-log`; failed jobs are recorded and the run continues
 - `searchMode`: `balanced` or `direct-ats-first`; the direct ATS mode ranks Greenhouse, Lever, and Workday-style hosts ahead of generic external apply links
 - `applySurfacePolicy`: default `external-only`; unattended runs use LinkedIn as discovery only and follow extracted external apply targets
+- `postedWithinHours`: optional posting-age filter; set `24` to keep the search/apply pass focused on jobs from the past day when the board exposes posting age
 - `tailoringProvider`: preferred AI tailoring backend; use `codex-cli` for file-level LaTeX editing through Codex CLI
 - `requireTailoringProvider`: set to `codex-cli`, `openai`, or `ai-agent` to block applications unless that provider succeeds
 - `entryLevelOnly`: skip senior/staff/manager-style titles
@@ -136,6 +139,7 @@ Each autorun now writes:
 
 - a machine-readable JSON run file in `runs`
 - a human-readable summary file next to it as `*.summary.txt`
+- stage-specific totals plus skip buckets, including postings skipped for being older than the configured time window
 
 The unattended workflow order is:
 
