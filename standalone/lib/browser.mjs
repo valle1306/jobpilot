@@ -9,25 +9,60 @@ const edgeCandidates = [
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
 ];
 
-export function getEdgeExecutablePath() {
-  for (const candidate of edgeCandidates) {
+const chromeCandidates = [
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+];
+
+function pickExecutable(candidates, fallback) {
+  for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
-  return edgeCandidates[0];
+
+  return fallback;
 }
 
-export async function launchBrowserContext({ headless = false } = {}) {
-  const executablePath = getEdgeExecutablePath();
-  const userDataDir = path.join(repoRoot, '.playwright-standalone');
+export function getEdgeExecutablePath() {
+  return pickExecutable(edgeCandidates, edgeCandidates[0]);
+}
 
-  return chromium.launchPersistentContext(userDataDir, {
+export function getChromeExecutablePath() {
+  return pickExecutable(chromeCandidates, chromeCandidates[0]);
+}
+
+export async function launchBrowserContext({
+  headless = false,
+  browserName = 'edge',
+  userDataDir = '',
+  profileDirectory = ''
+} = {}) {
+  const normalizedBrowser = String(browserName ?? 'edge').trim().toLowerCase();
+  const executablePath =
+    normalizedBrowser === 'chrome' ? getChromeExecutablePath() : getEdgeExecutablePath();
+  const resolvedUserDataDir = userDataDir
+    ? path.isAbsolute(userDataDir)
+      ? userDataDir
+      : path.resolve(repoRoot, userDataDir)
+    : path.join(
+        repoRoot,
+        normalizedBrowser === 'chrome'
+          ? '.playwright-standalone-chrome'
+          : '.playwright-standalone-edge'
+      );
+
+  const args = ['--disable-blink-features=AutomationControlled'];
+  if (profileDirectory) {
+    args.push(`--profile-directory=${profileDirectory}`);
+  }
+
+  return chromium.launchPersistentContext(resolvedUserDataDir, {
     executablePath,
     acceptDownloads: true,
     headless,
     viewport: { width: 1440, height: 1024 },
-    args: ['--disable-blink-features=AutomationControlled']
+    args
   });
 }
 

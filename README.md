@@ -96,6 +96,9 @@ If the search boards show authwalls, Cloudflare, or other anti-bot pages, seed t
 To enable JD-aware AI resume tailoring in the standalone flow, keep the `codex` block enabled in `profile.json` and run `.\scripts\codex-bootstrap.ps1`. JobPilot can use your existing Codex CLI ChatGPT login or fall back to `CODEX_API_KEY` or `OPENAI_API_KEY` from `.env`.
 If you want the shortcut to behave more like the original Claude-powered flow, set `standalone.requireTailoringProvider` to `codex-cli` so JobPilot refuses to apply unless Codex CLI tailoring succeeds and produces a tailored PDF.
 If you want to watch the browser work live, set `standalone.headless` to `false` in `profile.json`.
+Standalone now supports two execution styles:
+- `executionMode: "unattended-safe"` for true fire-and-forget runs. It disables manual prompts and skips hosts outside a conservative safe-host allowlist.
+- `executionMode: "supervised"` for Claude-like visible runs. It keeps manual prompts on, works best with `browserName: "chrome"`, and can pause so you can use your own autofill extension before JobPilot continues.
 
 Unattended runs now follow this order: discover jobs -> tailor with Codex CLI or the configured AI provider -> compile/download the one-page Overleaf PDF -> upload the PDF into the ATS/company form -> submit -> record the result.
 The standalone flow now prefers Codex CLI for real file editing of the LaTeX resume before Overleaf compile, and still treats a deliberate no-op as a valid AI-tailoring result.
@@ -108,6 +111,7 @@ Hard ATS hosts such as Workday, UKG/UltiPro, ADP, iCIMS, Taleo, Oracle Recruitin
 That Codex-assisted apply mode does not bypass real login walls, CAPTCHA, email verification, or MFA. It helps Playwright choose better guest/manual paths and field actions when the ATS UI is unusually dynamic.
 If an ATS requires account creation before applying, JobPilot now treats that as part of the application flow and fills the password fields from `credentials.default.password` unless you configured a board-specific credential override.
 If you prefer to watch and occasionally trigger your own browser autofill extension, set `standalone.manualAutofillAssist` to `true`. On difficult ATS pages, JobPilot will pause in the visible browser, let you use the extension manually, and then resume.
+If you want supervised runs to reuse a real Chrome profile with installed extensions, set `standalone.browserName` to `chrome` and point `standalone.browserUserDataDir` plus `standalone.browserProfileDirectory` at your Chrome profile. Close regular Chrome first before launching JobPilot in that mode.
 Each autorun now writes both a machine-readable run JSON and a human-readable `*.summary.txt` file in `runs`, including applied, failed, skipped, stage-specific totals, and skip buckets such as duplicate, no-direct-apply, and too-old postings.
 Standalone completion summaries now also group outcomes by board/apply host and break down why jobs failed or were skipped, closer to the original Claude `/autopilot` reporting style.
 

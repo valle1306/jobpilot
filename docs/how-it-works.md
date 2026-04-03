@@ -9,6 +9,30 @@
 - A persistent applied-jobs database (`applied-jobs.json`) prevents duplicate applications even if run files are deleted. Every successful application is logged via `scripts/log-applied.sh` and checked before applying via `scripts/check-applied.sh`
 - Cover letters and proposals are passed through the [humanizer](https://github.com/blader/humanizer) to remove AI writing patterns
 
+## Why Claude Felt Smoother
+
+Claude Code's strength is not that it bypasses ATS security. It works better on messy portals because the runtime can:
+
+- inspect the live page repeatedly and change tactics
+- pause for human help on login, email codes, CAPTCHA, or account creation
+- resume the same run after that interruption
+- leave retry notes when a specific path fails
+
+That means the original Claude `/autopilot` behaves like a supervised agent. It is still using browser automation, but it can recover interactively in a way a pure deterministic script cannot.
+
+## Standalone Adaptation
+
+The standalone Codex-powered flow now mirrors that split explicitly:
+
+- **`executionMode: "unattended-safe"`**: conservative fire-and-forget mode. It does not wait for user input, skips hosts outside a safe-host allowlist, and treats verification/account walls as reasons to skip or fail fast and continue.
+- **`executionMode: "supervised"`**: visible browser mode. It is the closer analogue to the Claude skills flow because JobPilot can pause on hard ATS pages, let the user handle verification or trigger an autofill extension, and then continue with the same run.
+
+In both modes:
+
+- Codex CLI can tailor the LaTeX resume before Overleaf compilation
+- Playwright handles the actual browser interaction
+- run files and applied-job tracking still persist progress and prevent duplicate applications
+
 ## Skills in Detail
 
 ### Autopilot (`/autopilot`)

@@ -109,6 +109,10 @@ File-driven batch mode:
 
 Current `standalone` config supports:
 
+- `executionMode`: `unattended-safe` or `supervised`; unattended-safe never waits for manual auth/verification and skips outside a conservative safe-host allowlist
+- `browserName`: `edge` or `chrome`
+- `browserUserDataDir`: optional browser user-data root for supervised Chrome runs; set this to your real Chrome user-data root if you want to reuse installed extensions
+- `browserProfileDirectory`: optional Chrome profile directory name such as `Default` when reusing a real Chrome profile
 - `mode`: `query` or `file`
 - `query`: default search query
 - `queries`: optional list of default search queries for autorun; useful for adjacent roles like data analyst and product analyst
@@ -125,6 +129,8 @@ Current `standalone` config supports:
 - `requireTailoringProvider`: set to `codex-cli`, `openai`, or `ai-agent` to block applications unless that provider succeeds
 - `codexAssistedApply`: when `true`, hard ATS hosts can ask Codex CLI for the next browser actions based on the live page state
 - `manualAutofillAssist`: when `true` and the browser is visible, JobPilot pauses on difficult ATS pages so you can use a browser autofill extension manually before resuming
+- `unattendedSafeHostsOnly`: when `true`, unattended-safe runs skip apply hosts outside the safe-host allowlist
+- `unattendedSafeApplyHosts`: conservative allowlist for true unattended auto-apply hosts
 - `codexAssistedApplyHosts`: host substrings that should trigger Codex-assisted apply, such as Workday, UKG/UltiPro, ADP, iCIMS, Taleo, Oracle Recruiting, SilkRoad, and Avature tenants
 - `codexAssistedApplyMaxRounds`: how many Codex-assisted planning rounds a single application step can use before falling back to the normal bounded loop
 - `codexAssistedApplyMaxActions`: maximum browser actions Codex can suggest per assistance round
@@ -155,6 +161,11 @@ The unattended workflow order is:
 - compile and download the one-page PDF from Overleaf
 - upload the PDF into the ATS/company form
 - submit and record the result
+
+Recommended operating model:
+
+- Use `executionMode: "unattended-safe"` when you are away. It behaves more conservatively than the original Claude workflow and skips hosts that are likely to need manual rescue.
+- Use `executionMode: "supervised"` when you are present. This is the closer analogue to Claude Code because JobPilot can pause for verification, registration, or manual autofill and then continue.
 
 Current `openai` config supports:
 
@@ -198,6 +209,7 @@ You can verify the shortcut status any time with:
 - Workday flows now try to steer toward guest/manual apply paths before falling back to login-required handling, and `incomplete` failures now include visible validation clues when available.
 - If an ATS forces account creation before applying, standalone mode now keeps that page in the normal form-filling path and uses your configured application password from `credentials.default.password` unless a board-specific credential override exists.
 - If `manualAutofillAssist` is enabled, standalone mode can pause on those difficult ATS pages and let you use a browser autofill extension yourself before JobPilot continues.
+- If you want supervised Chrome runs to reuse your installed browser extensions, point `browserUserDataDir` and `browserProfileDirectory` at your real Chrome profile. This is for supervised use only, not unattended-safe mode.
 - Unattended runs work best with direct ATS/company URLs. LinkedIn Easy Apply is skipped in unattended mode; LinkedIn is treated as a discovery source unless JobPilot can extract a direct external apply link.
 - Redirector-style hosts such as `jobright.ai`, `appcast`, `remotehunter`, `jobsyn`, and similar non-ATS apply wrappers are now treated as aggregator surfaces and skipped in unattended mode.
 - If an apply host requires login, extra verification, or repeatedly stalls as `incomplete`, standalone autorun now skips the rest of that host for the current run instead of wasting more attempts.

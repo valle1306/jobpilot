@@ -393,6 +393,34 @@ if ($codexRequireProvider -eq "codex-cli") {
   }
 }
 
+$standaloneExecutionMode = [string](Get-Value -Root $profile -Path @("standalone", "executionMode"))
+if ([string]::IsNullOrWhiteSpace($standaloneExecutionMode)) {
+  $standaloneExecutionMode = "unattended-safe"
+}
+Add-Result "OK" "standalone.executionMode" "Standalone execution mode is $standaloneExecutionMode."
+
+$standaloneBrowserName = [string](Get-Value -Root $profile -Path @("standalone", "browserName"))
+if ([string]::IsNullOrWhiteSpace($standaloneBrowserName)) {
+  $standaloneBrowserName = if ($standaloneExecutionMode -eq "supervised") { "chrome" } else { "edge" }
+}
+Add-Result "OK" "standalone.browserName" "Standalone browser is set to $standaloneBrowserName."
+
+$manualAutofillAssist = Get-Value -Root $profile -Path @("standalone", "manualAutofillAssist")
+if ($standaloneExecutionMode -eq "unattended-safe" -and $manualAutofillAssist -eq $true) {
+  Add-Result "WARN" "standalone.manualAutofillAssist" "manualAutofillAssist is enabled, but unattended-safe mode will not wait for extension-based autofill."
+}
+
+$browserUserDataDir = [string](Get-Value -Root $profile -Path @("standalone", "browserUserDataDir"))
+$browserProfileDirectory = [string](Get-Value -Root $profile -Path @("standalone", "browserProfileDirectory"))
+if ($standaloneBrowserName -eq "chrome" -and -not [string]::IsNullOrWhiteSpace($browserUserDataDir)) {
+  $profileMessage = if ([string]::IsNullOrWhiteSpace($browserProfileDirectory)) {
+    "Chrome user data dir is configured."
+  } else {
+    "Chrome user data dir is configured with profile $browserProfileDirectory."
+  }
+  Add-Result "OK" "standalone.chromeProfile" $profileMessage
+}
+
 $overleafEnabled = [bool](Get-Value -Root $profile -Path @("overleaf", "enabled"))
 if (-not $overleafEnabled) {
   Add-Result "WARN" "overleaf.enabled" "Overleaf integration is disabled. Leave it off if you do not need tailored resume automation."

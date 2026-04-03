@@ -167,7 +167,11 @@
       "early career machine learning engineer"
     ],
     "filePath": "./jobs-to-apply.txt",
-    "headless": false,
+    "executionMode": "unattended-safe",
+    "browserName": "edge",
+    "browserUserDataDir": "",
+    "browserProfileDirectory": "",
+    "headless": true,
     "autoApprove": true,
     "autoSubmit": true,
     "runLoopMode": "one-pass",
@@ -179,6 +183,16 @@
     "requireTailoringProvider": "codex-cli",
     "codexAssistedApply": true,
     "manualAutofillAssist": false,
+    "unattendedSafeHostsOnly": true,
+    "unattendedSafeApplyHosts": [
+      "job-boards.greenhouse.io",
+      "greenhouse.io",
+      "jobs.lever.co",
+      "lever.co",
+      "jobs.ashbyhq.com",
+      "ashbyhq.com",
+      "smartrecruiters.com"
+    ],
     "codexAssistedApplyHosts": [
       "myworkdayjobs.com",
       "myworkdaysite.com",

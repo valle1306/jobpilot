@@ -11,7 +11,8 @@ import {
   loadProfile,
   readResumeText,
   repoRoot,
-  resolveRepoPath
+  resolveRepoPath,
+  resolveStandaloneExecutionConfig
 } from './lib/config.mjs';
 import { launchBrowserContext } from './lib/browser.mjs';
 import {
@@ -73,13 +74,28 @@ Usage:
   node standalone/jobpilot.mjs setup [--bootstrap-overleaf] [--bootstrap-codex]
   node standalone/jobpilot.mjs overleaf-login
   node standalone/jobpilot.mjs search-bootstrap
-  node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless] [--search-mode direct-ats-first] [--posted-within-hours 24]
-  node standalone/jobpilot.mjs tailor <job-url> [--headless] [--no-download]
-  node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless]
-  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--limit 10] [--search-mode direct-ats-first] [--apply-surface-policy external-only] [--posted-within-hours 24]
+  node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless] [--browser chrome|edge] [--search-mode direct-ats-first] [--posted-within-hours 24]
+  node standalone/jobpilot.mjs tailor <job-url> [--headless] [--browser chrome|edge] [--no-download]
+  node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless] [--browser chrome|edge] [--execution-mode supervised|unattended-safe]
+  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--browser chrome|edge] [--execution-mode supervised|unattended-safe] [--limit 10] [--search-mode direct-ats-first] [--apply-surface-policy external-only] [--posted-within-hours 24]
   node standalone/jobpilot.mjs autopilot "manual batch" --file jobs-to-apply.txt [--yes] [--submit] [--resume resume.pdf]
   node standalone/jobpilot.mjs autorun
 `);
+}
+
+function launchConfiguredBrowserContext(profile, flags = {}, overrides = {}) {
+  const execution = resolveStandaloneExecutionConfig(profile, flags);
+  return {
+    execution,
+    contextPromise: launchBrowserContext({
+      headless:
+        typeof overrides.headless === 'boolean' ? overrides.headless : execution.headless,
+      browserName: overrides.browserName ?? execution.browserName,
+      userDataDir: overrides.browserUserDataDir ?? execution.browserUserDataDir,
+      profileDirectory:
+        overrides.browserProfileDirectory ?? execution.browserProfileDirectory
+    })
+  };
 }
 
 async function runPowerShellScript(scriptName) {
@@ -110,12 +126,15 @@ async function commandSetup(flags) {
 
 async function commandOverleafLogin(flags) {
   const { profile } = await loadProfile();
-  const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
+  const { contextPromise, execution } = launchConfiguredBrowserContext(profile, flags, {
+    headless: typeof flags.headless === 'boolean' ? Boolean(flags.headless) : false
+  });
+  const context = await contextPromise;
 
   try {
     await bootstrapOverleafSession({
       profile,
-      headless: Boolean(flags.headless),
+      headless: execution.headless,
       context,
       allowManualPrompt: true
     });
@@ -128,7 +147,8 @@ async function commandOverleafLogin(flags) {
 async function commandSearchBootstrap() {
   const { profile } = await loadProfile();
   const boards = getEnabledSearchBoards(profile);
-  const context = await launchBrowserContext({ headless: false });
+  const { contextPromise } = launchConfiguredBrowserContext(profile, {}, { headless: false });
+  const context = await contextPromise;
 
   try {
     for (const board of boards) {
@@ -155,7 +175,8 @@ async function commandSearch(query, flags) {
   const { profile } = await loadProfile();
   await ensureWorkingDirs();
   const { text: resumeText } = await readResumeText(profile);
-  const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
+  const { contextPromise } = launchConfiguredBrowserContext(profile, flags);
+  const context = await contextPromise;
   const standaloneConfig = profile.standalone ?? {};
   const postedWithinHours = resolvePostedWithinHours(standaloneConfig, flags);
 
@@ -239,14 +260,15 @@ async function loadJobsFromUrlFile({ context, filePath, resumeText, query }) {
 
 async function commandTailor(input, flags) {
   const { profile } = await loadProfile();
-  const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
+  const { contextPromise, execution } = launchConfiguredBrowserContext(profile, flags);
+  const context = await contextPromise;
 
   try {
     const job = await loadJobFromInput(context, input);
     const result = await tailorJob({
       profile,
       job,
-      headless: Boolean(flags.headless),
+      headless: execution.headless,
       downloadPdf: !Boolean(flags['no-download']),
       context
     });
@@ -276,7 +298,8 @@ async function commandTailor(input, flags) {
 async function commandApply(input, flags) {
   const { profile } = await loadProfile();
   const { text: resumeText } = await readResumeText(profile);
-  const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
+  const { contextPromise, execution } = launchConfiguredBrowserContext(profile, flags);
+  const context = await contextPromise;
   const standaloneConfig = profile.standalone ?? {};
   const requiredTailoringProvider = resolveRequiredTailoringProvider(standaloneConfig, flags);
 
@@ -287,7 +310,7 @@ async function commandApply(input, flags) {
       const tailored = await tailorJob({
         profile,
         job,
-        headless: Boolean(flags.headless),
+        headless: execution.headless,
         downloadPdf: true,
         context
       });
@@ -304,11 +327,12 @@ async function commandApply(input, flags) {
       job,
       submit: Boolean(flags.submit),
       autoConfirm: false,
-      headless: Boolean(flags.headless),
+      headless: execution.headless,
       tailoredResumePath,
       context,
       resumeText,
-      resumePathOverride: flags.resume ? resolveRepoPath(flags.resume) : ''
+      resumePathOverride: flags.resume ? resolveRepoPath(flags.resume) : '',
+      allowManualPrompt: execution.allowManualPrompt
     });
 
     console.log(`\nApply status: ${result.status}`);
@@ -539,6 +563,15 @@ function withJobApplyMetadata(job, preferredDomains = []) {
   };
 }
 
+function hostMatchesPatterns(host = '', patterns = []) {
+  const normalizedHost = String(host ?? '').trim().toLowerCase();
+  if (!normalizedHost) {
+    return false;
+  }
+
+  return patterns.some((pattern) => normalizedHost.includes(String(pattern ?? '').toLowerCase()));
+}
+
 function buildSkippedJob(job, reason, skipCategory = 'filters', preferredDomains = []) {
   const enriched = withJobApplyMetadata(job, preferredDomains);
   return {
@@ -669,6 +702,8 @@ function applyAutopilotFilters(
   const requireDirectApply = Boolean(options.requireDirectApply);
   const applySurfacePolicy = options.applySurfacePolicy ?? 'external-only';
   const preferredDomains = options.preferredAtsDomains ?? [];
+  const unattendedSafeHostsOnly = Boolean(options.unattendedSafeHostsOnly);
+  const unattendedSafeApplyHosts = options.unattendedSafeApplyHosts ?? [];
 
   return jobs.map((job) => {
     if (job.status === 'skipped') {
@@ -722,6 +757,19 @@ function applyAutopilotFilters(
         enrichedJob,
         'No direct external apply URL extracted from the listing',
         'no-direct-apply',
+        preferredDomains
+      );
+    }
+
+    if (
+      unattendedSafeHostsOnly &&
+      enrichedJob.applyUrl &&
+      !hostMatchesPatterns(enrichedJob.applyHost, unattendedSafeApplyHosts)
+    ) {
+      return buildSkippedJob(
+        enrichedJob,
+        `Apply host is outside the unattended-safe allowlist: ${enrichedJob.applyHost || 'unknown host'}`,
+        'unattended-safe-host',
         preferredDomains
       );
     }
@@ -909,12 +957,15 @@ async function searchAcrossQueries({
 
 async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   const { text: resumeText } = await readResumeText(profile);
-  const context = await launchBrowserContext({ headless: Boolean(flags.headless) });
-  const allowManualPrompt = !(
-    Boolean(flags.headless) &&
-    Boolean(flags.submit) &&
-    Boolean(flags.yes)
-  );
+  const execution = resolveStandaloneExecutionConfig(profile, flags);
+  const { contextPromise } = launchConfiguredBrowserContext(profile, flags, {
+    headless: execution.headless,
+    browserName: execution.browserName,
+    browserUserDataDir: execution.browserUserDataDir,
+    browserProfileDirectory: execution.browserProfileDirectory
+  });
+  const context = await contextPromise;
+  const allowManualPrompt = execution.allowManualPrompt;
   const maxApplicationsConfig = resolveMaxApplications(
     flags.limit ??
       standaloneConfig.maxApplicationsPerRun ??
@@ -947,6 +998,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     queries,
     searchLimitPerQuery: perQueryLimit,
     allowManualPrompt,
+    executionMode: execution.executionMode,
+    browserName: execution.browserName,
+    headless: execution.headless,
     runLoopMode,
     failurePolicy,
     requireDirectApply,
@@ -954,7 +1008,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     searchMode,
     postedWithinHours,
     preferredAtsDomains,
-    requiredTailoringProvider
+    requiredTailoringProvider,
+    unattendedSafeHostsOnly: execution.unattendedSafeHostsOnly,
+    unattendedSafeApplyHosts: execution.unattendedSafeApplyHosts
   });
 
   try {
@@ -982,7 +1038,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
       applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore, {
         requireDirectApply,
         applySurfacePolicy,
-        preferredAtsDomains
+        preferredAtsDomains,
+        unattendedSafeHostsOnly: execution.unattendedSafeHostsOnly,
+        unattendedSafeApplyHosts: execution.unattendedSafeApplyHosts
       }),
       searchMode,
       preferredAtsDomains
@@ -1007,6 +1065,11 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     console.log(
       `Qualified ${approvedCandidates.length} jobs for apply. ${directApplyCount} have direct external apply targets, ${preferredAtsCount} are on preferred ATS hosts.`
     );
+    if (execution.executionMode === 'unattended-safe' && execution.unattendedSafeHostsOnly) {
+      console.log(
+        `Unattended-safe mode: only hosts in the safe allowlist will be auto-applied.`
+      );
+    }
     if (postedWithinHours > 0) {
       console.log(`Recency filter: only jobs from the last ${postedWithinHours} hours are eligible when posting age is available.`);
     }
@@ -1086,7 +1149,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
           const tailored = await tailorJob({
             profile,
             job,
-            headless: Boolean(flags.headless),
+            headless: execution.headless,
             downloadPdf: true,
             context,
             allowManualPrompt
@@ -1130,7 +1193,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
         job,
         submit: Boolean(flags.submit),
         autoConfirm: true,
-        headless: Boolean(flags.headless),
+        headless: execution.headless,
         tailoredResumePath,
         context,
         resumeText,
@@ -1187,7 +1250,7 @@ async function commandAutopilot(query, flags) {
   await runAutopilot(profile, query, flags, profile.standalone ?? {});
 }
 
-async function commandAutorun() {
+async function commandAutorun(flagOverrides = {}) {
   const { profile } = await loadProfile();
   const standaloneConfig = profile.standalone ?? {};
 
@@ -1203,7 +1266,10 @@ async function commandAutorun() {
   const flags = {
     yes: standaloneConfig.autoApprove ?? true,
     submit: standaloneConfig.autoSubmit ?? true,
-    headless: standaloneConfig.headless ?? true,
+    'execution-mode': standaloneConfig.executionMode ?? '',
+    browser: standaloneConfig.browserName ?? '',
+    'browser-user-data-dir': standaloneConfig.browserUserDataDir ?? '',
+    'browser-profile-directory': standaloneConfig.browserProfileDirectory ?? '',
     limit:
       standaloneConfig.maxApplicationsPerRun ??
       profile.autopilot?.maxApplicationsPerRun ??
@@ -1219,6 +1285,14 @@ async function commandAutorun() {
     'require-openai-tailoring': standaloneConfig.requireOpenAITailoring ?? '',
     'require-tailoring-provider': standaloneConfig.requireTailoringProvider ?? ''
   };
+
+  if (typeof standaloneConfig.headless === 'boolean') {
+    flags.headless = standaloneConfig.headless;
+  }
+
+  for (const [key, value] of Object.entries(flagOverrides)) {
+    flags[key] = value;
+  }
 
   await runAutopilot(profile, query, flags, standaloneConfig);
 }
@@ -1267,7 +1341,7 @@ async function main() {
       await commandAutopilot(positional.join(' '), flags);
       break;
     case 'autorun':
-      await commandAutorun();
+      await commandAutorun(flags);
       break;
     default:
       printHelp();

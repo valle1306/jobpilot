@@ -339,6 +339,81 @@ export function resolveCodexApplyConfig(profile = {}) {
   };
 }
 
+function toNormalizedString(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+export function resolveStandaloneExecutionConfig(profile = {}, flags = {}) {
+  const standalone = profile.standalone ?? {};
+  const executionMode = (() => {
+    const configured = toNormalizedString(
+      flags['execution-mode'] ?? standalone.executionMode ?? 'unattended-safe'
+    );
+    return configured === 'supervised' ? 'supervised' : 'unattended-safe';
+  })();
+
+  const browserName = (() => {
+    const configured = toNormalizedString(
+      flags.browser ?? standalone.browserName ?? (executionMode === 'supervised' ? 'chrome' : 'edge')
+    );
+    return configured === 'chrome' ? 'chrome' : 'edge';
+  })();
+
+  const browserUserDataDir = String(
+    flags['browser-user-data-dir'] ?? standalone.browserUserDataDir ?? ''
+  ).trim();
+  const browserProfileDirectory = String(
+    flags['browser-profile-directory'] ?? standalone.browserProfileDirectory ?? ''
+  ).trim();
+
+  const hasExplicitHeadlessFlag = Object.prototype.hasOwnProperty.call(flags, 'headless');
+  const headless = hasExplicitHeadlessFlag
+    ? Boolean(flags.headless)
+    : typeof standalone.headless === 'boolean'
+      ? standalone.headless
+      : executionMode === 'unattended-safe';
+
+  const allowManualPrompt = executionMode === 'supervised';
+  const manualAutofillAssist =
+    allowManualPrompt &&
+    !headless &&
+    standalone.manualAutofillAssist === true;
+
+  const unattendedSafeHostsOnly =
+    executionMode === 'unattended-safe'
+      ? standalone.unattendedSafeHostsOnly !== false
+      : false;
+
+  const configuredSafeHosts = Array.isArray(standalone.unattendedSafeApplyHosts)
+    ? standalone.unattendedSafeApplyHosts
+    : [];
+  const unattendedSafeApplyHosts = (configuredSafeHosts.length
+    ? configuredSafeHosts
+    : [
+        'job-boards.greenhouse.io',
+        'greenhouse.io',
+        'jobs.lever.co',
+        'lever.co',
+        'jobs.ashbyhq.com',
+        'ashbyhq.com',
+        'smartrecruiters.com'
+      ])
+    .map((value) => String(value ?? '').trim().toLowerCase())
+    .filter(Boolean);
+
+  return {
+    executionMode,
+    browserName,
+    browserUserDataDir,
+    browserProfileDirectory,
+    headless,
+    allowManualPrompt,
+    manualAutofillAssist,
+    unattendedSafeHostsOnly,
+    unattendedSafeApplyHosts
+  };
+}
+
 export async function ensureWorkingDirs() {
   await ensureDir(path.join(repoRoot, 'runs'));
   await ensureDir(path.join(repoRoot, 'resumes', 'tailored'));
