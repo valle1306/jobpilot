@@ -525,6 +525,21 @@ function classifyApplyFailureStage(result = {}) {
   return 'application';
 }
 
+function classifyHostBlockReason(result = {}) {
+  const status = String(result.status ?? '').toLowerCase();
+  const failReason = String(result.failReason ?? result.status ?? '').trim();
+
+  if (['verification-required', 'manual-step-required', 'login-required'].includes(status)) {
+    return failReason || 'Manual verification or login is required on this host.';
+  }
+
+  if (status === 'incomplete') {
+    return 'The unattended application flow stalled as incomplete on this host.';
+  }
+
+  return '';
+}
+
 function validateTailoringForApply(tailored, requireOpenAITailoring = false) {
   if (!tailored) {
     return {
@@ -882,6 +897,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   });
 
   try {
+    const blockedApplyHosts = new Map();
     const jobs = flags.file
       ? await loadJobsFromUrlFile({
           context,
@@ -965,11 +981,23 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     const approvedJobs = run.jobs.filter((entry) => entry.status === 'approved');
     for (const [index, job] of approvedJobs.entries()) {
       const applyTargetUrl = resolveEffectiveApplyUrl(job);
+      const applyHost = getUrlHostname(applyTargetUrl);
+      if (applyHost && blockedApplyHosts.has(applyHost)) {
+        job.status = 'skipped';
+        job.stage = 'skipped';
+        job.skipCategory = 'host-blocked';
+        job.skipReason = `Skipped because ${applyHost} already failed in unattended mode: ${blockedApplyHosts.get(applyHost)}`;
+        await saveRun(runPath, run);
+        console.log(
+          `Skipping ${truncate(job.title, 56)} at ${truncate(job.company, 32)} because ${applyHost} was already blocked earlier in this run.`
+        );
+        continue;
+      }
+
       console.log(
         `Applying ${index + 1}/${approvedJobs.length}: ${truncate(job.title, 56)} at ${truncate(job.company, 32)}`
       );
       if (applyTargetUrl) {
-        const applyHost = getUrlHostname(applyTargetUrl);
         job.applyUrl = applyTargetUrl;
         console.log(`  Apply target URL: ${applyTargetUrl}`);
         if (applyHost) {
@@ -1067,6 +1095,10 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
         job.stage = 'failed';
         job.failStage = classifyApplyFailureStage(result);
         job.failReason = result.failReason || result.status;
+        const hostBlockReason = applyHost ? classifyHostBlockReason(result) : '';
+        if (applyHost && hostBlockReason) {
+          blockedApplyHosts.set(applyHost, hostBlockReason);
+        }
         console.log(`  Result: failed (${job.failReason})`);
       }
 

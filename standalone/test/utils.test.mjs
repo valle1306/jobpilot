@@ -33,6 +33,8 @@ test('canonicalizeJobUrl strips tracking parameters from LinkedIn job URLs', () 
 
 test('isAggregatorUrl identifies aggregator job surfaces', () => {
   assert.equal(isAggregatorUrl('https://www.linkedin.com/jobs/view/123'), true);
+  assert.equal(isAggregatorUrl('https://jobright.ai/jobs/info/abc123'), true);
+  assert.equal(isAggregatorUrl('https://click.appcast.io/t/example'), true);
   assert.equal(isAggregatorUrl('https://jobs.lever.co/acme/123'), false);
 });
 

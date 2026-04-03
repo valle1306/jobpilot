@@ -170,5 +170,7 @@ You can verify the shortcut status any time with:
 - If you enable `requireOpenAITailoring`, that conservative fallback is no longer accepted for unattended applying. The run will fail that job instead of applying with a non-OpenAI-tailored resume.
 - Apply/autopilot are designed for ATS-style forms and may still need board-specific refinements for some sites.
 - Unattended runs work best with direct ATS/company URLs. LinkedIn Easy Apply is skipped in unattended mode; LinkedIn is treated as a discovery source unless JobPilot can extract a direct external apply link.
+- Redirector-style hosts such as `jobright.ai`, `appcast`, `remotehunter`, `jobsyn`, and similar non-ATS apply wrappers are now treated as aggregator surfaces and skipped in unattended mode.
+- If an apply host requires login, extra verification, or repeatedly stalls as `incomplete`, standalone autorun now skips the rest of that host for the current run instead of wasting more attempts.
 - If Overleaf still triggers a one-time verification step, run `.\scripts\overleaf-login-bootstrap.ps1` first so the persistent browser session is ready before autorun starts.
 - Some search boards now block unattended browsers entirely. When that happens, autorun will log the board-specific block reason instead of silently returning zero jobs.

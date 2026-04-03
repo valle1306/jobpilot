@@ -234,7 +234,12 @@ export function isAggregatorUrl(rawUrl) {
       hostname.includes('linkedin.com') ||
       hostname.includes('indeed.com') ||
       hostname.includes('glassdoor.com') ||
-      hostname.includes('hiring.cafe')
+      hostname.includes('hiring.cafe') ||
+      hostname.includes('jobright.ai') ||
+      hostname.includes('remotehunter.com') ||
+      hostname.includes('appcast.io') ||
+      hostname.includes('jobsyn.org') ||
+      hostname.includes('afterquery.com')
     );
   } catch {
     return false;
