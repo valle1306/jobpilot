@@ -121,7 +121,9 @@ async function detectOverleafAuthRequired(page) {
   return (
     bodyText.includes('log in to overleaf') ||
     bodyText.includes('sign in to overleaf') ||
-    bodyText.includes('continue with email')
+    bodyText.includes('continue with email') ||
+    bodyText.includes('restricted, sorry you don') ||
+    bodyText.includes("you don't have permission to load this page")
   );
 }
 
@@ -208,7 +210,7 @@ async function downloadOverleafPdf(page, outputPath) {
   return '';
 }
 
-async function ensureOverleafSession(page, profile, allowManualPrompt) {
+async function ensureOverleafSession(page, profile, allowManualPrompt, projectUrl = '') {
   const credentials =
     profile.overleaf?.email && profile.overleaf?.webPassword
       ? { email: profile.overleaf.email, password: profile.overleaf.webPassword }
@@ -221,6 +223,10 @@ async function ensureOverleafSession(page, profile, allowManualPrompt) {
   if (credentials) {
     await attemptLogin(page, credentials);
     await page.waitForTimeout(2500);
+
+    if (projectUrl) {
+      await gotoAndSettle(page, projectUrl);
+    }
   }
 
   const challenge = await detectHumanChallenge(page);
@@ -254,7 +260,7 @@ export async function bootstrapOverleafSession({
     const projectUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}`;
 
     await gotoAndSettle(page, projectUrl);
-    await ensureOverleafSession(page, profile, allowManualPrompt);
+    await ensureOverleafSession(page, profile, allowManualPrompt, projectUrl);
     const editorReady = await waitForOverleafEditor(page);
     if (!editorReady) {
       throw new Error('Overleaf editor did not finish loading after sign-in.');
@@ -295,7 +301,7 @@ async function maybeDownloadOverleafPdf({
     const projectUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}`;
 
     await gotoAndSettle(page, projectUrl);
-    await ensureOverleafSession(page, profile, allowManualPrompt);
+    await ensureOverleafSession(page, profile, allowManualPrompt, projectUrl);
     const editorReady = await waitForOverleafEditor(page);
     if (!editorReady) {
       throw new Error('Overleaf editor did not finish loading after sign-in.');

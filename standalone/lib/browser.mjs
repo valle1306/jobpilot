@@ -96,7 +96,21 @@ export async function attemptLogin(page, credentials) {
   try {
     let touchedForm = false;
 
-    if (await emailInput.isVisible({ timeout: 700 }).catch(() => false)) {
+    const hasVisibleEmail = await emailInput.isVisible({ timeout: 700 }).catch(() => false);
+    const hasVisiblePassword = await page
+      .locator(passwordSelector)
+      .first()
+      .isVisible({ timeout: 700 })
+      .catch(() => false);
+
+    if (!hasVisibleEmail && !hasVisiblePassword) {
+      const openedLogin = await tryClickByText(page, ['log in', 'sign in', 'continue with email']);
+      if (openedLogin) {
+        await page.waitForTimeout(1800);
+      }
+    }
+
+    if (await emailInput.isVisible({ timeout: 1200 }).catch(() => false)) {
       await emailInput.fill(credentials.email);
       touchedForm = true;
 
@@ -112,7 +126,7 @@ export async function attemptLogin(page, credentials) {
     }
 
     const passwordInput = page.locator(passwordSelector).first();
-    if (!(await passwordInput.isVisible({ timeout: 1500 }).catch(() => false))) {
+    if (!(await passwordInput.isVisible({ timeout: 2000 }).catch(() => false))) {
       return touchedForm;
     }
 
