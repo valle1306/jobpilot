@@ -339,6 +339,26 @@ export function resolveCodexApplyConfig(profile = {}) {
   };
 }
 
+export function resolveCodexRunGuidanceConfig(profile = {}) {
+  const standalone = profile.standalone ?? {};
+  const configuredProvider = String(
+    standalone.guidanceProvider ?? standalone.runGuidanceProvider ?? ''
+  )
+    .trim()
+    .toLowerCase();
+  const enabled =
+    profile.codex?.enabled === true &&
+    configuredProvider !== 'deterministic' &&
+    (configuredProvider === 'codex-cli' || standalone.codexGuidedRun !== false);
+
+  return {
+    enabled,
+    provider: enabled ? 'codex-cli' : 'deterministic',
+    maxReviewJobs: Math.max(6, Number(standalone.codexGuidedMaxReviewJobs ?? 24) || 24),
+    rescueMinScore: Math.max(0, Number(standalone.codexGuidedRescueMinScore ?? 4) || 4)
+  };
+}
+
 function toNormalizedString(value) {
   return String(value ?? '').trim().toLowerCase();
 }

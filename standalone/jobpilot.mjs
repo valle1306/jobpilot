@@ -11,10 +11,13 @@ import {
   loadProfile,
   readResumeText,
   repoRoot,
+  resolveCodexRunGuidanceConfig,
   resolveRepoPath,
   resolveStandaloneExecutionConfig
 } from './lib/config.mjs';
 import { launchBrowserContext } from './lib/browser.mjs';
+import { shouldUseCodexApplyAssist } from './lib/codex-apply.mjs';
+import { reviewAutopilotJobsWithCodexCli } from './lib/codex-review.mjs';
 import {
   buildRunCompletionOverview,
   saveRun,
@@ -585,6 +588,106 @@ function buildSkippedJob(job, reason, skipCategory = 'filters', preferredDomains
   };
 }
 
+function compareGuidedPriority(left, right) {
+  const leftPriority = Number.isFinite(Number(left?.guidedPriority))
+    ? Number(left.guidedPriority)
+    : Number.MAX_SAFE_INTEGER;
+  const rightPriority = Number.isFinite(Number(right?.guidedPriority))
+    ? Number(right.guidedPriority)
+    : Number.MAX_SAFE_INTEGER;
+
+  if (leftPriority !== rightPriority) {
+    return leftPriority - rightPriority;
+  }
+
+  return (right?.matchScore ?? 0) - (left?.matchScore ?? 0);
+}
+
+function buildAutopilotEligibility(job, profile, standaloneConfig = {}, minMatchScore = 6, options = {}) {
+  const preferredDomains = options.preferredAtsDomains ?? [];
+  const requireDirectApply = Boolean(options.requireDirectApply);
+  const applySurfacePolicy = options.applySurfacePolicy ?? 'external-only';
+  const unattendedSafeHostsOnly = Boolean(options.unattendedSafeHostsOnly);
+  const unattendedSafeApplyHosts = options.unattendedSafeApplyHosts ?? [];
+  const titleKeywords = [
+    ...(profile.autopilot?.skipTitleKeywords ?? []),
+    ...(standaloneConfig.skipTitleKeywords ?? [])
+  ].map((value) => String(value).toLowerCase());
+
+  const enrichedJob = withJobApplyMetadata(job, preferredDomains);
+  if (job.status === 'skipped') {
+    return {
+      job: enrichedJob,
+      hardBlocked: true,
+      hardBlockCategory: job.skipCategory || 'skipped',
+      hardBlockReason: job.skipReason || 'Skipped before autopilot review.',
+      softWarnings: []
+    };
+  }
+
+  const normalizedTitle = String(job.title ?? '').toLowerCase();
+  const blockedKeyword = titleKeywords.find((keyword) => normalizedTitle.includes(keyword));
+  const titleOk = !blockedKeyword && titleMatchesEntryLevel(job.title, standaloneConfig);
+  const yearsOk = yearsMatchEntryLevel(job, standaloneConfig);
+  const locationOk = locationMatches(job, standaloneConfig, profile);
+  const scoreOk = (job.matchScore ?? 0) >= minMatchScore;
+  const hasDirectApply = Boolean(enrichedJob.applyUrl);
+  const codexAssistEligible = hasDirectApply
+    ? shouldUseCodexApplyAssist(enrichedJob.applyUrl, profile)
+    : false;
+  const hostAllowed =
+    !unattendedSafeHostsOnly ||
+    !hasDirectApply ||
+    hostMatchesPatterns(enrichedJob.applyHost, unattendedSafeApplyHosts) ||
+    codexAssistEligible;
+
+  let hardBlockReason = '';
+  let hardBlockCategory = '';
+  if ((applySurfacePolicy === 'external-only' || requireDirectApply) && !hasDirectApply) {
+    hardBlockReason = 'No direct external apply URL extracted from the listing';
+    hardBlockCategory = 'no-direct-apply';
+  } else if (unattendedSafeHostsOnly && hasDirectApply && !hostAllowed) {
+    hardBlockReason = `Apply host is outside the unattended-safe allowlist: ${enrichedJob.applyHost || 'unknown host'}`;
+    hardBlockCategory = 'unattended-safe-host';
+  }
+
+  const softWarnings = [];
+  if (blockedKeyword) {
+    softWarnings.push(`Title contains blocked keyword: ${blockedKeyword}`);
+  }
+  if (!titleOk && !blockedKeyword) {
+    softWarnings.push('Title looks above entry level');
+  }
+  if (!yearsOk) {
+    softWarnings.push(
+      `Requires more than ${resolveEntryLevelMaxYears(standaloneConfig)} years of experience`
+    );
+  }
+  if (!locationOk) {
+    softWarnings.push('Outside preferred locations');
+  }
+  if (!scoreOk) {
+    softWarnings.push(`Below minimum heuristic match score (${job.matchScore ?? 0} < ${minMatchScore})`);
+  }
+  if (hasDirectApply && codexAssistEligible) {
+    softWarnings.push('Needs Codex-assisted apply on a harder ATS host');
+  }
+
+  return {
+    job: enrichedJob,
+    hardBlocked: Boolean(hardBlockReason),
+    hardBlockCategory,
+    hardBlockReason,
+    softWarnings,
+    blockedKeyword,
+    titleOk,
+    yearsOk,
+    locationOk,
+    scoreOk,
+    codexAssistEligible
+  };
+}
+
 function classifyTailoringFailureStage(errorMessage = '') {
   const normalized = String(errorMessage ?? '').toLowerCase();
   if (
@@ -695,88 +798,64 @@ function applyAutopilotFilters(
   minMatchScore = 6,
   options = {}
 ) {
-  const titleKeywords = [
-    ...(profile.autopilot?.skipTitleKeywords ?? []),
-    ...(standaloneConfig.skipTitleKeywords ?? [])
-  ].map((value) => String(value).toLowerCase());
-  const requireDirectApply = Boolean(options.requireDirectApply);
-  const applySurfacePolicy = options.applySurfacePolicy ?? 'external-only';
   const preferredDomains = options.preferredAtsDomains ?? [];
-  const unattendedSafeHostsOnly = Boolean(options.unattendedSafeHostsOnly);
-  const unattendedSafeApplyHosts = options.unattendedSafeApplyHosts ?? [];
-
   return jobs.map((job) => {
-    if (job.status === 'skipped') {
-      return withJobApplyMetadata(job, preferredDomains);
+    const eligibility = buildAutopilotEligibility(
+      job,
+      profile,
+      standaloneConfig,
+      minMatchScore,
+      options
+    );
+
+    if (eligibility.hardBlocked) {
+      return buildSkippedJob(
+        eligibility.job,
+        eligibility.hardBlockReason,
+        eligibility.hardBlockCategory || 'filters',
+        preferredDomains
+      );
     }
 
-    const enrichedJob = withJobApplyMetadata(job, preferredDomains);
-    const normalizedTitle = String(job.title ?? '').toLowerCase();
-    const blockedKeyword = titleKeywords.find((keyword) => normalizedTitle.includes(keyword));
-    if (blockedKeyword) {
+    if (eligibility.blockedKeyword) {
       return buildSkippedJob(
-        enrichedJob,
-        `Title contains blocked keyword: ${blockedKeyword}`,
+        eligibility.job,
+        `Title contains blocked keyword: ${eligibility.blockedKeyword}`,
         'filters',
         preferredDomains
       );
     }
 
-    if (!titleMatchesEntryLevel(job.title, standaloneConfig)) {
+    if (!eligibility.titleOk) {
       return buildSkippedJob(
-        enrichedJob,
+        eligibility.job,
         'Filtered out by entry-level only mode',
         'filters',
         preferredDomains
       );
     }
 
-    if (!yearsMatchEntryLevel(job, standaloneConfig)) {
+    if (!eligibility.yearsOk) {
       return buildSkippedJob(
-        enrichedJob,
+        eligibility.job,
         `Requires more than ${resolveEntryLevelMaxYears(standaloneConfig)} years of experience`,
         'filters',
         preferredDomains
       );
     }
 
-    if (!locationMatches(job, standaloneConfig, profile)) {
+    if (!eligibility.locationOk) {
       return buildSkippedJob(
-        enrichedJob,
+        eligibility.job,
         'Outside preferred locations',
         'filters',
         preferredDomains
       );
     }
 
-    if (
-      (applySurfacePolicy === 'external-only' || requireDirectApply) &&
-      !enrichedJob.applyUrl
-    ) {
+    if (!eligibility.scoreOk) {
       return buildSkippedJob(
-        enrichedJob,
-        'No direct external apply URL extracted from the listing',
-        'no-direct-apply',
-        preferredDomains
-      );
-    }
-
-    if (
-      unattendedSafeHostsOnly &&
-      enrichedJob.applyUrl &&
-      !hostMatchesPatterns(enrichedJob.applyHost, unattendedSafeApplyHosts)
-    ) {
-      return buildSkippedJob(
-        enrichedJob,
-        `Apply host is outside the unattended-safe allowlist: ${enrichedJob.applyHost || 'unknown host'}`,
-        'unattended-safe-host',
-        preferredDomains
-      );
-    }
-
-    if (job.matchScore < minMatchScore) {
-      return buildSkippedJob(
-        enrichedJob,
+        eligibility.job,
         `Below minimum match score (${job.matchScore} < ${minMatchScore})`,
         'filters',
         preferredDomains
@@ -784,7 +863,7 @@ function applyAutopilotFilters(
     }
 
     return {
-      ...enrichedJob,
+      ...eligibility.job,
       status: 'pending',
       stage: 'qualified',
       skipReason: '',
@@ -793,6 +872,148 @@ function applyAutopilotFilters(
       failReason: ''
     };
   });
+}
+
+async function applyCodexGuidedSelection(
+  jobs,
+  profile,
+  standaloneConfig = {},
+  minMatchScore = 6,
+  options = {}
+) {
+  const preferredDomains = options.preferredAtsDomains ?? [];
+  const searchMode = options.searchMode ?? 'balanced';
+  const maxApplications = Number(options.maxApplications ?? 5);
+  const queryLabel = options.queryLabel ?? 'autorun';
+  const resumeText = options.resumeText ?? '';
+  const executionMode = options.executionMode ?? 'unattended-safe';
+  const postedWithinHours = Number(options.postedWithinHours ?? 0);
+  const guidanceConfig = options.guidanceConfig ?? { enabled: false };
+
+  if (!guidanceConfig.enabled) {
+    return {
+      jobs: rankSearchResults(
+        applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore, options),
+        searchMode,
+        preferredDomains
+      ),
+      guidanceSummary: '',
+      guidanceProvider: 'deterministic'
+    };
+  }
+
+  const assessed = jobs.map((job) =>
+    buildAutopilotEligibility(job, profile, standaloneConfig, minMatchScore, options)
+  );
+  const reviewable = rankSearchResults(
+    assessed
+      .filter((entry) => !entry.hardBlocked)
+      .filter((entry) => (entry.job.matchScore ?? 0) >= guidanceConfig.rescueMinScore)
+      .map((entry) => ({
+        ...entry.job,
+        hardBlocked: false,
+        hardBlockReason: '',
+        hardBlockCategory: '',
+        softWarnings: entry.softWarnings,
+        codexAssistEligible: entry.codexAssistEligible
+      })),
+    searchMode,
+    preferredDomains
+  ).slice(0, guidanceConfig.maxReviewJobs);
+
+  if (reviewable.length === 0) {
+    return {
+      jobs: rankSearchResults(
+        applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore, options),
+        searchMode,
+        preferredDomains
+      ),
+      guidanceSummary: 'Codex-guided review had no reviewable jobs after hard safety checks.',
+      guidanceProvider: 'deterministic'
+    };
+  }
+
+  const reviewableIds = new Set(reviewable.map((job) => job.id));
+  try {
+    const review = await reviewAutopilotJobsWithCodexCli({
+      profile,
+      query: queryLabel,
+      jobs: reviewable,
+      resumeText,
+      standaloneConfig,
+      maxApplications,
+      minMatchScore,
+      executionMode,
+      postedWithinHours,
+      guidanceConfig
+    });
+
+    const selectedEntries = review.selected
+      .filter((entry) => reviewableIds.has(entry.id))
+      .sort((left, right) => left.priority - right.priority || left.id - right.id)
+      .slice(0, maxApplications);
+    const selectedIds = new Set(selectedEntries.map((entry) => entry.id));
+    const selectedById = new Map(selectedEntries.map((entry) => [entry.id, entry]));
+
+    const guidedJobs = assessed.map((entry) => {
+      if (entry.hardBlocked) {
+        return buildSkippedJob(
+          entry.job,
+          entry.hardBlockReason,
+          entry.hardBlockCategory || 'filters',
+          preferredDomains
+        );
+      }
+
+      if (!reviewableIds.has(entry.job.id)) {
+        return buildSkippedJob(
+          entry.job,
+          `Skipped before Codex-guided review because it ranked below the top ${guidanceConfig.maxReviewJobs} review candidates.`,
+          'guidance-review-limit',
+          preferredDomains
+        );
+      }
+
+      if (!selectedIds.has(entry.job.id)) {
+        return buildSkippedJob(
+          entry.job,
+          'Not selected by Codex-guided review for this run.',
+          'guidance-skip',
+          preferredDomains
+        );
+      }
+
+      const decision = selectedById.get(entry.job.id);
+      return {
+        ...entry.job,
+        status: 'pending',
+        stage: 'qualified',
+        skipReason: '',
+        skipCategory: '',
+        failStage: '',
+        failReason: '',
+        guidedPriority: decision?.priority ?? Number.MAX_SAFE_INTEGER,
+        guidedReason: decision?.reason ?? '',
+        guidanceProvider: 'codex-cli'
+      };
+    });
+
+    return {
+      jobs: rankSearchResults(guidedJobs, searchMode, preferredDomains),
+      guidanceSummary: review.summary || 'Codex-guided review selected jobs for this run.',
+      guidanceProvider: review.method || 'codex-cli'
+    };
+  } catch (error) {
+    return {
+      jobs: rankSearchResults(
+        applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore, options),
+        searchMode,
+        preferredDomains
+      ),
+      guidanceSummary: `Codex-guided review failed and the run fell back to deterministic filters: ${error.message}`,
+      guidanceProvider: 'deterministic'
+    };
+  }
 }
 
 function normalizeQueries(value) {
@@ -997,6 +1218,7 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
   const runLoopMode = resolveRunLoopMode(standaloneConfig, flags);
   const failurePolicy = resolveFailurePolicy(standaloneConfig, flags);
   const postedWithinHours = resolvePostedWithinHours(standaloneConfig, flags);
+  const guidanceConfig = resolveCodexRunGuidanceConfig(profile);
 
   const { runPath, run } = await createRunFile(runQuery, {
     minMatchScore,
@@ -1015,6 +1237,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
     postedWithinHours,
     preferredAtsDomains,
     requiredTailoringProvider,
+    guidanceProvider: guidanceConfig.provider,
+    codexGuidedMaxReviewJobs: guidanceConfig.maxReviewJobs,
+    codexGuidedRescueMinScore: guidanceConfig.rescueMinScore,
     unattendedSafeHostsOnly: execution.unattendedSafeHostsOnly,
     unattendedSafeApplyHosts: execution.unattendedSafeApplyHosts
   });
@@ -1040,20 +1265,38 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
           preferredAtsDomains
         });
 
-    run.jobs = rankSearchResults(
-      applyAutopilotFilters(jobs, profile, standaloneConfig, minMatchScore, {
+    const guidanceResult = await applyCodexGuidedSelection(
+      jobs,
+      profile,
+      standaloneConfig,
+      minMatchScore,
+      {
         requireDirectApply,
         applySurfacePolicy,
         preferredAtsDomains,
         unattendedSafeHostsOnly: execution.unattendedSafeHostsOnly,
-        unattendedSafeApplyHosts: execution.unattendedSafeApplyHosts
-      }),
-      searchMode,
-      preferredAtsDomains
+        unattendedSafeApplyHosts: execution.unattendedSafeApplyHosts,
+        searchMode,
+        maxApplications: Math.min(maxApplications, guidanceConfig.maxReviewJobs),
+        queryLabel: runQuery,
+        resumeText,
+        executionMode: execution.executionMode,
+        postedWithinHours,
+        guidanceConfig
+      }
     );
+    run.jobs = guidanceResult.jobs;
+    run.guidanceProvider = guidanceResult.guidanceProvider;
+    run.guidanceSummary = guidanceResult.guidanceSummary;
     await saveRun(runPath, run);
 
-    const pendingCandidates = run.jobs.filter((job) => job.status === 'pending');
+    if (run.guidanceSummary) {
+      console.log(`Codex-guided review: ${run.guidanceSummary}`);
+    }
+
+    const pendingCandidates = run.jobs
+      .filter((job) => job.status === 'pending')
+      .sort(compareGuidedPriority);
     const approvedCandidates = maxApplicationsConfig.unlimited
       ? pendingCandidates
       : pendingCandidates.slice(0, maxApplications);
@@ -1112,7 +1355,9 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
 
     await saveRun(runPath, run);
 
-    const approvedJobs = run.jobs.filter((entry) => entry.status === 'approved');
+    const approvedJobs = run.jobs
+      .filter((entry) => entry.status === 'approved')
+      .sort(compareGuidedPriority);
     for (const [index, job] of approvedJobs.entries()) {
       const applyTargetUrl = resolveEffectiveApplyUrl(job);
       const applyHost = getUrlHostname(applyTargetUrl);

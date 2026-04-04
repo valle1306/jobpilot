@@ -213,6 +213,8 @@ export function buildRunSummaryText(run) {
     `Run: ${run.runId ?? 'unknown'}`,
     `Query: ${run.query ?? 'unknown'}`,
     `Status: ${run.status ?? 'unknown'}`,
+    `Guidance provider: ${run.guidanceProvider ?? run.config?.guidanceProvider ?? 'deterministic'}`,
+    `Guidance summary: ${run.guidanceSummary ?? 'n/a'}`,
     `Started: ${run.startedAt ?? 'unknown'}`,
     `Completed: ${run.completedAt ?? 'in progress'}`,
     '',
@@ -270,6 +272,7 @@ export function buildRunCompletionOverview(run) {
   return [
     `Autopilot Run ${run.status === 'completed' ? 'Complete' : 'Status'}: "${run.query ?? 'unknown'}"`,
     '',
+    `- Guidance: ${run.guidanceProvider ?? run.config?.guidanceProvider ?? 'deterministic'}`,
     `- Jobs found: ${summary.totalFound}`,
     `- Qualified: ${summary.qualified}`,
     `- Applied: ${summary.applied}`,

@@ -124,6 +124,10 @@ Current `standalone` config supports:
 - `failurePolicy`: currently `continue-and-log`; failed jobs are recorded and the run continues
 - `searchMode`: `balanced` or `direct-ats-first`; the direct ATS mode ranks Greenhouse, Lever, and Workday-style hosts ahead of generic external apply links
 - `applySurfacePolicy`: default `external-only`; unattended runs use LinkedIn as discovery only and follow extracted external apply targets
+- `guidanceProvider`: `codex-cli` or `deterministic`; `codex-cli` lets Codex review the discovered job pool and choose what this run should pursue
+- `codexGuidedRun`: enables Codex-guided run selection when Codex CLI is available
+- `codexGuidedMaxReviewJobs`: maximum number of discovered jobs shown to Codex for one run-planning pass
+- `codexGuidedRescueMinScore`: lowest heuristic match score a job can have and still be eligible for Codex-guided rescue
 - `postedWithinHours`: optional posting-age filter; set `24` to keep the search/apply pass focused on jobs from the past day when the board exposes posting age
 - `tailoringProvider`: preferred AI tailoring backend; use `codex-cli` for file-level LaTeX editing through Codex CLI
 - `requireTailoringProvider`: set to `codex-cli`, `openai`, or `ai-agent` to block applications unless that provider succeeds
@@ -156,7 +160,7 @@ Each autorun now writes:
 The unattended workflow order is:
 
 - discover jobs
-- filter to unattended-safe external apply targets
+- let Codex CLI review the discovered pool and choose the best unattended-safe external apply targets for this pass
 - tailor resume with Codex CLI or the configured AI provider
 - compile and download the one-page PDF from Overleaf
 - upload the PDF into the ATS/company form

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveStandaloneExecutionConfig } from '../lib/config.mjs';
+import { resolveCodexRunGuidanceConfig, resolveStandaloneExecutionConfig } from '../lib/config.mjs';
 
 test('resolveStandaloneExecutionConfig defaults to unattended-safe edge mode', () => {
   const config = resolveStandaloneExecutionConfig({ standalone: {} }, {});
@@ -56,4 +56,28 @@ test('resolveStandaloneExecutionConfig honors explicit browser overrides', () =>
     'C:\\Users\\lpnhu\\AppData\\Local\\Google\\Chrome\\User Data'
   );
   assert.equal(config.browserProfileDirectory, 'Default');
+});
+
+test('resolveCodexRunGuidanceConfig enables codex-guided review by default when codex is enabled', () => {
+  const config = resolveCodexRunGuidanceConfig({
+    codex: { enabled: true },
+    standalone: {}
+  });
+
+  assert.equal(config.enabled, true);
+  assert.equal(config.provider, 'codex-cli');
+  assert.equal(config.maxReviewJobs, 24);
+  assert.equal(config.rescueMinScore, 4);
+});
+
+test('resolveCodexRunGuidanceConfig can be forced back to deterministic mode', () => {
+  const config = resolveCodexRunGuidanceConfig({
+    codex: { enabled: true },
+    standalone: {
+      guidanceProvider: 'deterministic'
+    }
+  });
+
+  assert.equal(config.enabled, false);
+  assert.equal(config.provider, 'deterministic');
 });

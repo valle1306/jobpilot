@@ -101,6 +101,7 @@ Standalone now supports two execution styles:
 - `executionMode: "supervised"` for Claude-like visible runs. It keeps manual prompts on, works best with `browserName: "chrome"`, and can pause so you can use your own autofill extension before JobPilot continues.
 
 Unattended runs now follow this order: discover jobs -> tailor with Codex CLI or the configured AI provider -> compile/download the one-page Overleaf PDF -> upload the PDF into the ATS/company form -> submit -> record the result.
+Standalone can now also use Codex CLI to guide the run itself, not just tailoring and hard ATS forms. When `standalone.guidanceProvider` is `codex-cli`, Codex reviews the discovered jobs, picks the best candidates for the current pass, and can rescue reasonable fits that the old rigid heuristic filters would have skipped.
 The standalone flow now prefers Codex CLI for real file editing of the LaTeX resume before Overleaf compile, and still treats a deliberate no-op as a valid AI-tailoring result.
 LinkedIn is treated as a discovery source in unattended mode. Aggregator pages like LinkedIn are skipped unless JobPilot can extract a direct external apply link.
 The current standalone defaults also disable `Indeed` and `Hiring Cafe` because both are frequently blocked in unattended browser sessions, and use `direct-ats-first` ranking so Greenhouse, Lever, and Workday-style apply links are prioritized.
