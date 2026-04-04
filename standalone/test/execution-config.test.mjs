@@ -1,16 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   resolveCodexRunGuidanceConfig,
   resolveStandaloneExecutionConfig,
   resolveStandalonePreflightConfig
 } from '../lib/config.mjs';
 
-test('resolveStandaloneExecutionConfig defaults to unattended-safe edge mode', () => {
+function expectedDefaultBrowser() {
+  const chromeCandidates =
+    process.platform === 'win32'
+      ? [
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+        ]
+      : process.platform === 'darwin'
+        ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+        : ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium'];
+
+  return chromeCandidates.some((candidate) => candidate && fs.existsSync(candidate))
+    ? 'chrome'
+    : 'edge';
+}
+
+test('resolveStandaloneExecutionConfig defaults to the preferred installed browser', () => {
   const config = resolveStandaloneExecutionConfig({ standalone: {} }, {});
 
   assert.equal(config.executionMode, 'unattended-safe');
-  assert.equal(config.browserName, 'edge');
+  assert.equal(config.browserName, expectedDefaultBrowser());
   assert.equal(config.browserProfileStrategy, 'auto');
   assert.equal(config.headless, true);
   assert.equal(config.allowManualPrompt, false);

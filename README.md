@@ -108,6 +108,7 @@ If you want to watch the browser work live, set `standalone.headless` to `false`
 Standalone now supports two execution styles:
 - `executionMode: "unattended-safe"` for true fire-and-forget runs. It disables manual prompts and skips hosts outside a conservative safe-host allowlist.
 - `executionMode: "supervised"` for Claude-like visible runs. It keeps manual prompts on, works best with `browserName: "chrome"`, and can pause so you can use your own autofill extension before JobPilot continues.
+When `standalone.browserName` is omitted, JobPilot now prefers Chrome if it is installed and falls back to Edge otherwise.
 
 Unattended runs now follow this order: discover jobs -> tailor with Codex CLI or the configured AI provider -> compile/download the one-page Overleaf PDF -> upload the PDF into the ATS/company form -> submit -> record the result.
 Standalone can now also use Codex CLI to guide the run itself, not just tailoring and hard ATS forms. When `standalone.guidanceProvider` is `codex-cli`, Codex reviews the discovered jobs, picks the best candidates for the current pass, and can rescue reasonable fits that the old rigid heuristic filters would have skipped.

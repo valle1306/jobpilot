@@ -168,7 +168,7 @@
     ],
     "filePath": "./jobs-to-apply.txt",
     "executionMode": "unattended-safe",
-    "browserName": "edge",
+    "browserName": "chrome",
     "browserUserDataDir": "",
     "browserProfileDirectory": "",
     "browserProfileStrategy": "auto",

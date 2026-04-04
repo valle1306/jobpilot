@@ -114,7 +114,7 @@ File-driven batch mode:
 Current `standalone` config supports:
 
 - `executionMode`: `unattended-safe` or `supervised`; unattended-safe never waits for manual auth/verification and skips outside a conservative safe-host allowlist
-- `browserName`: `edge` or `chrome`
+- `browserName`: `edge` or `chrome`; when omitted, JobPilot now prefers Chrome if it is installed and otherwise falls back to Edge
 - `browserUserDataDir`: optional browser user-data root; when you point this at a real Edge or Chrome profile, JobPilot can either launch that live profile directly or mirror it into a repo-local automation profile depending on `browserProfileStrategy`
 - `browserProfileDirectory`: optional browser profile directory name such as `Default` when reusing a real browser profile
 - `browserProfileStrategy`: `auto`, `mirror`, or `direct`; `auto` uses the live system profile directly for visible runs and mirrored mode for headless ones

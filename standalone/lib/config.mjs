@@ -363,6 +363,24 @@ function toNormalizedString(value) {
   return String(value ?? '').trim().toLowerCase();
 }
 
+function detectPreferredStandaloneBrowserName() {
+  const chromeCandidates =
+    process.platform === 'win32'
+      ? [
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+        ]
+      : process.platform === 'darwin'
+        ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+        : ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium'];
+
+  if (chromeCandidates.some((candidate) => candidate && fsSync.existsSync(candidate))) {
+    return 'chrome';
+  }
+
+  return 'edge';
+}
+
 function normalizeBrowserProfileStrategy(value = '') {
   const normalized = toNormalizedString(value);
   if (normalized === 'direct' || normalized === 'mirror') {
@@ -380,10 +398,11 @@ export function resolveStandaloneExecutionConfig(profile = {}, flags = {}) {
     );
     return configured === 'supervised' ? 'supervised' : 'unattended-safe';
   })();
+  const preferredBrowser = detectPreferredStandaloneBrowserName();
 
   const browserName = (() => {
     const configured = toNormalizedString(
-      flags.browser ?? standalone.browserName ?? (executionMode === 'supervised' ? 'chrome' : 'edge')
+      flags.browser ?? standalone.browserName ?? preferredBrowser
     );
     return configured === 'chrome' ? 'chrome' : 'edge';
   })();
