@@ -111,8 +111,8 @@ Current `standalone` config supports:
 
 - `executionMode`: `unattended-safe` or `supervised`; unattended-safe never waits for manual auth/verification and skips outside a conservative safe-host allowlist
 - `browserName`: `edge` or `chrome`
-- `browserUserDataDir`: optional browser user-data root for supervised Chrome runs; set this to your real Chrome user-data root if you want to reuse installed extensions
-- `browserProfileDirectory`: optional Chrome profile directory name such as `Default` when reusing a real Chrome profile
+- `browserUserDataDir`: optional browser user-data root; when you point this at a real Edge or Chrome profile, JobPilot mirrors that profile state into a repo-local automation profile before launch instead of trying to take over the live browser profile directly
+- `browserProfileDirectory`: optional browser profile directory name such as `Default` when reusing a real browser profile
 - `mode`: `query` or `file`
 - `query`: default search query
 - `queries`: optional list of default search queries for autorun; useful for adjacent roles like data analyst and product analyst
@@ -209,7 +209,7 @@ You can verify the shortcut status any time with:
 - Workday flows now try to steer toward guest/manual apply paths before falling back to login-required handling, and `incomplete` failures now include visible validation clues when available.
 - If an ATS forces account creation before applying, standalone mode now keeps that page in the normal form-filling path and uses your configured application password from `credentials.default.password` unless a board-specific credential override exists.
 - If `manualAutofillAssist` is enabled, standalone mode can pause on those difficult ATS pages and let you use a browser autofill extension yourself before JobPilot continues.
-- If you want supervised Chrome runs to reuse your installed browser extensions, point `browserUserDataDir` and `browserProfileDirectory` at your real Chrome profile. This is for supervised use only, not unattended-safe mode.
+- If you want supervised Chrome runs to reuse your installed browser extensions, point `browserUserDataDir` and `browserProfileDirectory` at your real Chrome profile. JobPilot will mirror that profile state into its own automation profile before launch, which is more reliable than trying to attach directly to a live Chrome or Edge session.
 - Unattended runs work best with direct ATS/company URLs. LinkedIn Easy Apply is skipped in unattended mode; LinkedIn is treated as a discovery source unless JobPilot can extract a direct external apply link.
 - Redirector-style hosts such as `jobright.ai`, `appcast`, `remotehunter`, `jobsyn`, and similar non-ATS apply wrappers are now treated as aggregator surfaces and skipped in unattended mode.
 - If an apply host requires login, extra verification, or repeatedly stalls as `incomplete`, standalone autorun now skips the rest of that host for the current run instead of wasting more attempts.

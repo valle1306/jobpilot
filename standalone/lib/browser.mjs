@@ -32,38 +32,333 @@ export function getChromeExecutablePath() {
   return pickExecutable(chromeCandidates, chromeCandidates[0]);
 }
 
+function normalizeFsPath(value = '') {
+  return path.resolve(String(value || '')).replace(/[\\/]+/g, '\\').toLowerCase();
+}
+
+function getSystemUserDataDir(browserName = 'edge') {
+  const localAppData = process.env.LOCALAPPDATA || '';
+  if (!localAppData) {
+    return '';
+  }
+
+  return browserName === 'chrome'
+    ? path.join(localAppData, 'Google', 'Chrome', 'User Data')
+    : path.join(localAppData, 'Microsoft', 'Edge', 'User Data');
+}
+
+export function shouldMirrorSystemUserDataDir(userDataDir = '', browserName = 'edge') {
+  if (!userDataDir) {
+    return false;
+  }
+
+  const systemDir = getSystemUserDataDir(browserName);
+  if (!systemDir) {
+    return false;
+  }
+
+  return normalizeFsPath(userDataDir) === normalizeFsPath(systemDir);
+}
+
+export function resolveBrowserLaunchPlan({
+  browserName = 'edge',
+  userDataDir = '',
+  profileDirectory = ''
+} = {}) {
+  const normalizedBrowser = String(browserName ?? 'edge').trim().toLowerCase() === 'chrome'
+    ? 'chrome'
+    : 'edge';
+  const defaultAutomationDir = path.join(
+    repoRoot,
+    normalizedBrowser === 'chrome'
+      ? '.playwright-standalone-chrome'
+      : '.playwright-standalone-edge'
+  );
+  const resolvedUserDataDir = userDataDir
+    ? path.isAbsolute(userDataDir)
+      ? userDataDir
+      : path.resolve(repoRoot, userDataDir)
+    : defaultAutomationDir;
+  const resolvedProfileDirectory = profileDirectory || 'Default';
+  const mirroredFromSystem = shouldMirrorSystemUserDataDir(
+    resolvedUserDataDir,
+    normalizedBrowser
+  );
+
+  return {
+    browserName: normalizedBrowser,
+    userDataDir: mirroredFromSystem ? defaultAutomationDir : resolvedUserDataDir,
+    profileDirectory: resolvedProfileDirectory,
+    sourceUserDataDir: mirroredFromSystem ? resolvedUserDataDir : '',
+    sourceProfileDirectory: mirroredFromSystem ? resolvedProfileDirectory : '',
+    mirroredFromSystem
+  };
+}
+
+function getMirrorRootDir(browserName = 'edge') {
+  return path.join(
+    repoRoot,
+    browserName === 'chrome'
+      ? '.playwright-standalone-chrome-mirror'
+      : '.playwright-standalone-edge-mirror'
+  );
+}
+
+const browserStateRootEntries = ['Local State'];
+const browserStateProfileEntries = [
+  'Preferences',
+  'Secure Preferences',
+  'Bookmarks',
+  'Login Data',
+  'Login Data For Account',
+  'Web Data',
+  'History',
+  'Favicons',
+  'Sessions',
+  'Cookies',
+  'Network',
+  'Local Storage',
+  'Session Storage',
+  'IndexedDB',
+  'WebStorage',
+  'Service Worker',
+  'Extension State',
+  'Extensions',
+  'Local Extension Settings',
+  'Sync Extension Settings'
+];
+
+function shouldSkipMirroredPath(candidatePath) {
+  const normalizedParts = path
+    .normalize(candidatePath)
+    .split(path.sep)
+    .filter(Boolean)
+    .map((part) => part.toLowerCase());
+
+  return normalizedParts.some((part) =>
+    [
+      'cache',
+      'cache_data',
+      'code cache',
+      'gpucache',
+      'grshadercache',
+      'shadercache',
+      'dawncache',
+      'crashpad',
+      'browsermetrics',
+      'optimizationhints',
+      'safe browsing'
+    ].includes(part) ||
+    part.startsWith('singleton') ||
+    part === 'lockfile' ||
+    part === 'lock'
+  );
+}
+
+function copyBrowserStatePath(sourcePath, targetPath) {
+  if (!fs.existsSync(sourcePath)) {
+    return true;
+  }
+
+  try {
+    fs.cpSync(sourcePath, targetPath, {
+      recursive: true,
+      force: true,
+      errorOnExist: false,
+      dereference: true,
+      filter: (candidate) => !shouldSkipMirroredPath(candidate)
+    });
+    return true;
+  } catch (error) {
+    const message = String(error?.message || '').toLowerCase();
+    if (
+      error?.code === 'EBUSY' ||
+      error?.code === 'EPERM' ||
+      message.includes('being used by another process') ||
+      message.includes('resource busy or locked')
+    ) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+function removeChromiumLockFiles(userDataDir, profileDirectory) {
+  const candidates = [
+    path.join(userDataDir, 'SingletonLock'),
+    path.join(userDataDir, 'SingletonCookie'),
+    path.join(userDataDir, 'SingletonSocket'),
+    path.join(userDataDir, 'lockfile'),
+    path.join(userDataDir, profileDirectory, 'LOCK'),
+    path.join(userDataDir, profileDirectory, 'lockfile')
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        fs.rmSync(candidate, { force: true });
+      }
+    } catch {
+      // Ignore stale lock cleanup failures.
+    }
+  }
+}
+
+function syncSystemBrowserProfile(plan) {
+  if (!plan.mirroredFromSystem) {
+    return { lockedPaths: [] };
+  }
+
+  const sourceUserDataDir = plan.sourceUserDataDir;
+  const sourceProfileDirectory = plan.sourceProfileDirectory;
+  const targetUserDataDir = plan.userDataDir;
+  const targetProfileDirectory = plan.profileDirectory;
+  const sourceProfileDir = path.join(sourceUserDataDir, sourceProfileDirectory);
+  const targetProfileDir = path.join(targetUserDataDir, targetProfileDirectory);
+
+  if (!fs.existsSync(sourceProfileDir)) {
+    throw new Error(
+      `Configured browser profile directory was not found: ${sourceProfileDir}`
+    );
+  }
+
+  fs.mkdirSync(targetUserDataDir, { recursive: true });
+  fs.mkdirSync(targetProfileDir, { recursive: true });
+  const lockedPaths = [];
+
+  for (const entry of browserStateRootEntries) {
+    const copied = copyBrowserStatePath(
+      path.join(sourceUserDataDir, entry),
+      path.join(targetUserDataDir, entry)
+    );
+    if (!copied) {
+      lockedPaths.push(path.join(sourceUserDataDir, entry));
+    }
+  }
+
+  for (const entry of browserStateProfileEntries) {
+    const copied = copyBrowserStatePath(
+      path.join(sourceProfileDir, entry),
+      path.join(targetProfileDir, entry)
+    );
+    if (!copied) {
+      lockedPaths.push(path.join(sourceProfileDir, entry));
+    }
+  }
+
+  removeChromiumLockFiles(targetUserDataDir, targetProfileDirectory);
+  return { lockedPaths };
+}
+
+function cloneSeedProfileToLaunchDir({
+  seedUserDataDir,
+  profileDirectory,
+  launchUserDataDir
+}) {
+  fs.mkdirSync(launchUserDataDir, { recursive: true });
+  fs.mkdirSync(path.join(launchUserDataDir, profileDirectory), { recursive: true });
+
+  for (const entry of browserStateRootEntries) {
+    copyBrowserStatePath(
+      path.join(seedUserDataDir, entry),
+      path.join(launchUserDataDir, entry)
+    );
+  }
+
+  for (const entry of browserStateProfileEntries) {
+    copyBrowserStatePath(
+      path.join(seedUserDataDir, profileDirectory, entry),
+      path.join(launchUserDataDir, profileDirectory, entry)
+    );
+  }
+
+  removeChromiumLockFiles(launchUserDataDir, profileDirectory);
+}
+
+function prepareMirrorLaunchDir(browserName = 'edge') {
+  const mirrorRootDir = getMirrorRootDir(browserName);
+  fs.mkdirSync(mirrorRootDir, { recursive: true });
+
+  try {
+    for (const entry of fs.readdirSync(mirrorRootDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const candidate = path.join(mirrorRootDir, entry.name);
+      const stats = fs.statSync(candidate);
+      const ageMs = Date.now() - stats.mtimeMs;
+      if (ageMs > 24 * 60 * 60 * 1000) {
+        fs.rmSync(candidate, { recursive: true, force: true });
+      }
+    }
+  } catch {
+    // Ignore best-effort cleanup failures.
+  }
+
+  return fs.mkdtempSync(path.join(mirrorRootDir, 'run-'));
+}
+
 export async function launchBrowserContext({
   headless = false,
   browserName = 'edge',
   userDataDir = '',
   profileDirectory = ''
 } = {}) {
-  const normalizedBrowser = String(browserName ?? 'edge').trim().toLowerCase();
+  const plan = resolveBrowserLaunchPlan({
+    browserName,
+    userDataDir,
+    profileDirectory
+  });
+  const normalizedBrowser = plan.browserName;
   const executablePath =
     normalizedBrowser === 'chrome' ? getChromeExecutablePath() : getEdgeExecutablePath();
-  const resolvedUserDataDir = userDataDir
-    ? path.isAbsolute(userDataDir)
-      ? userDataDir
-      : path.resolve(repoRoot, userDataDir)
-    : path.join(
-        repoRoot,
-        normalizedBrowser === 'chrome'
-          ? '.playwright-standalone-chrome'
-          : '.playwright-standalone-edge'
-      );
+  let launchUserDataDir = plan.userDataDir;
 
-  const args = ['--disable-blink-features=AutomationControlled'];
-  if (profileDirectory) {
-    args.push(`--profile-directory=${profileDirectory}`);
+  if (plan.mirroredFromSystem) {
+    const syncResult = syncSystemBrowserProfile({
+      ...plan,
+      userDataDir: plan.userDataDir
+    });
+    launchUserDataDir = prepareMirrorLaunchDir(normalizedBrowser);
+    cloneSeedProfileToLaunchDir({
+      seedUserDataDir: plan.userDataDir,
+      profileDirectory: plan.profileDirectory,
+      launchUserDataDir
+    });
+    console.log(
+      `Using mirrored ${normalizedBrowser} profile from ${plan.sourceProfileDirectory} via ${plan.userDataDir} into ${launchUserDataDir}`
+    );
+    if (syncResult.lockedPaths.length > 0) {
+      console.log(
+        `Some live ${normalizedBrowser} profile files were locked, so JobPilot reused the last mirrored automation state for them.`
+      );
+    }
   }
 
-  return chromium.launchPersistentContext(resolvedUserDataDir, {
-    executablePath,
-    acceptDownloads: true,
-    headless,
-    viewport: { width: 1440, height: 1024 },
-    args
-  });
+  const args = ['--disable-blink-features=AutomationControlled'];
+  if (plan.profileDirectory) {
+    args.push(`--profile-directory=${plan.profileDirectory}`);
+  }
+
+  try {
+    return await chromium.launchPersistentContext(launchUserDataDir, {
+      executablePath,
+      acceptDownloads: true,
+      headless,
+      viewport: { width: 1440, height: 1024 },
+      args
+    });
+  } catch (error) {
+    if (String(error?.message || '').includes('spawn EPERM') && plan.mirroredFromSystem) {
+      throw new Error(
+        `JobPilot could not launch ${normalizedBrowser} even after mirroring your signed-in browser profile into ${launchUserDataDir}. Close all ${normalizedBrowser} windows and try again.`
+      );
+    }
+
+    throw error;
+  }
 }
 
 export async function gotoAndSettle(page, url) {

@@ -5,6 +5,8 @@ node_modules/
 .playwright-standalone/
 .playwright-standalone-edge/
 .playwright-standalone-chrome/
+.playwright-standalone-edge-mirror/
+.playwright-standalone-chrome-mirror/
 *.pdf
 *.csv
 .claude/
