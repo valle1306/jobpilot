@@ -113,6 +113,7 @@ Current `standalone` config supports:
 - `browserName`: `edge` or `chrome`
 - `browserUserDataDir`: optional browser user-data root; when you point this at a real Edge or Chrome profile, JobPilot mirrors that profile state into a repo-local automation profile before launch instead of trying to take over the live browser profile directly
 - `browserProfileDirectory`: optional browser profile directory name such as `Default` when reusing a real browser profile
+  After a run, JobPilot now persists login changes made inside that mirrored automation browser back into the reusable automation profile, so a LinkedIn sign-in done once in the JobPilot browser can carry forward to later runs.
 - `mode`: `query` or `file`
 - `query`: default search query
 - `queries`: optional list of default search queries for autorun; useful for adjacent roles like data analyst and product analyst
@@ -170,6 +171,7 @@ Recommended operating model:
 
 - Use `executionMode: "unattended-safe"` when you are away. It behaves more conservatively than the original Claude workflow and skips hosts that are likely to need manual rescue.
 - Use `executionMode: "supervised"` when you are present. This is the closer analogue to Claude Code because JobPilot can pause for verification, registration, or manual autofill and then continue.
+- If LinkedIn still appears signed out in the JobPilot browser, sign in once there and let the run close normally. That LinkedIn session should now be saved into JobPilot's reusable automation profile for future runs.
 
 Current `openai` config supports:
 

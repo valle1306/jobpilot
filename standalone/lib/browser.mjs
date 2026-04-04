@@ -276,6 +276,31 @@ function cloneSeedProfileToLaunchDir({
   removeChromiumLockFiles(launchUserDataDir, profileDirectory);
 }
 
+function persistLaunchProfileToSeedDir({
+  launchUserDataDir,
+  seedUserDataDir,
+  profileDirectory
+}) {
+  fs.mkdirSync(seedUserDataDir, { recursive: true });
+  fs.mkdirSync(path.join(seedUserDataDir, profileDirectory), { recursive: true });
+
+  for (const entry of browserStateRootEntries) {
+    copyBrowserStatePath(
+      path.join(launchUserDataDir, entry),
+      path.join(seedUserDataDir, entry)
+    );
+  }
+
+  for (const entry of browserStateProfileEntries) {
+    copyBrowserStatePath(
+      path.join(launchUserDataDir, profileDirectory, entry),
+      path.join(seedUserDataDir, profileDirectory, entry)
+    );
+  }
+
+  removeChromiumLockFiles(seedUserDataDir, profileDirectory);
+}
+
 function prepareMirrorLaunchDir(browserName = 'edge') {
   const mirrorRootDir = getMirrorRootDir(browserName);
   fs.mkdirSync(mirrorRootDir, { recursive: true });
@@ -343,13 +368,60 @@ export async function launchBrowserContext({
   }
 
   try {
-    return await chromium.launchPersistentContext(launchUserDataDir, {
+    const context = await chromium.launchPersistentContext(launchUserDataDir, {
       executablePath,
       acceptDownloads: true,
       headless,
       viewport: { width: 1440, height: 1024 },
       args
     });
+
+    if (plan.mirroredFromSystem) {
+      const originalClose = context.close.bind(context);
+      let persisted = false;
+      context.close = async (...closeArgs) => {
+        let closeError = null;
+        try {
+          await originalClose(...closeArgs);
+        } catch (error) {
+          closeError = error;
+        }
+
+        if (!persisted) {
+          persisted = true;
+          try {
+            persistLaunchProfileToSeedDir({
+              launchUserDataDir,
+              seedUserDataDir: plan.userDataDir,
+              profileDirectory: plan.profileDirectory
+            });
+          } catch (error) {
+            if (!closeError) {
+              closeError = error;
+            } else {
+              console.warn(
+                `Warning: JobPilot could not persist the mirrored ${normalizedBrowser} browser state after this run. ${error.message}`
+              );
+            }
+          }
+
+          try {
+            fs.rmSync(launchUserDataDir, { recursive: true, force: true });
+          } catch {
+            // Ignore best-effort cleanup failures.
+          }
+        }
+
+        if (
+          closeError &&
+          !String(closeError?.message || '').toLowerCase().includes('target page, context or browser has been closed')
+        ) {
+          throw closeError;
+        }
+      };
+    }
+
+    return context;
   } catch (error) {
     if (String(error?.message || '').includes('spawn EPERM') && plan.mirroredFromSystem) {
       throw new Error(
