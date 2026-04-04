@@ -363,6 +363,15 @@ function toNormalizedString(value) {
   return String(value ?? '').trim().toLowerCase();
 }
 
+function normalizeBrowserProfileStrategy(value = '') {
+  const normalized = toNormalizedString(value);
+  if (normalized === 'direct' || normalized === 'mirror') {
+    return normalized;
+  }
+
+  return 'auto';
+}
+
 export function resolveStandaloneExecutionConfig(profile = {}, flags = {}) {
   const standalone = profile.standalone ?? {};
   const executionMode = (() => {
@@ -385,6 +394,9 @@ export function resolveStandaloneExecutionConfig(profile = {}, flags = {}) {
   const browserProfileDirectory = String(
     flags['browser-profile-directory'] ?? standalone.browserProfileDirectory ?? ''
   ).trim();
+  const browserProfileStrategy = normalizeBrowserProfileStrategy(
+    flags['browser-profile-strategy'] ?? standalone.browserProfileStrategy ?? ''
+  );
 
   const hasExplicitHeadlessFlag = Object.prototype.hasOwnProperty.call(flags, 'headless');
   const headless = hasExplicitHeadlessFlag
@@ -426,11 +438,35 @@ export function resolveStandaloneExecutionConfig(profile = {}, flags = {}) {
     browserName,
     browserUserDataDir,
     browserProfileDirectory,
+    browserProfileStrategy,
     headless,
     allowManualPrompt,
     manualAutofillAssist,
     unattendedSafeHostsOnly,
     unattendedSafeApplyHosts
+  };
+}
+
+export function resolveStandalonePreflightConfig(profile = {}, flags = {}) {
+  const standalone = profile.standalone ?? {};
+  const forceRequested =
+    flags['force-preflight'] === true ||
+    String(flags['force-preflight'] ?? '').trim() === 'true';
+  const skipRequested =
+    flags['skip-preflight'] === true || String(flags['skip-preflight'] ?? '').trim() === 'true';
+  const checkOnlyRequested =
+    flags['check-only'] === true || String(flags['check-only'] ?? '').trim() === 'true';
+
+  const enabled = forceRequested ? true : skipRequested ? false : standalone.preflightChecks !== false;
+  const repairAuth = checkOnlyRequested ? false : standalone.preflightRepairAuth !== false;
+  const bootstrapSetup = repairAuth && standalone.preflightBootstrapSetup !== false;
+
+  return {
+    enabled,
+    repairAuth,
+    bootstrapSetup,
+    searchSessions: standalone.preflightSearchSessions !== false,
+    overleafSession: standalone.preflightOverleafSession !== false
   };
 }
 

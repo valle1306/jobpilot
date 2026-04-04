@@ -6,6 +6,7 @@ import {
   detectLoginPage,
   dismissLinkedInSignInPrompt,
   gotoAndSettle,
+  openContextPage,
   promptForManualStep
 } from './browser.mjs';
 import { dedupeJobs, scoreJob } from './scoring.mjs';
@@ -180,7 +181,7 @@ export function resolvePostedMetadata({
   };
 }
 
-function buildSearchUrl(board, parsed, postedWithinHours = 0) {
+export function buildSearchUrl(board, parsed, postedWithinHours = 0) {
   const base = board.searchUrl ?? '';
   const domain = board.domain ?? '';
   const normalizedPostedWithinHours = normalizePostedWithinHours(postedWithinHours);
@@ -410,6 +411,165 @@ async function ensureLinkedInSearchReady(page, searchUrl, allowManualPrompt = tr
   }
 
   return blockReason;
+}
+
+async function ensureBoardSearchLoginReady(
+  page,
+  board,
+  searchUrl,
+  allowManualPrompt = true,
+  options = {}
+) {
+  const { parsed = null, rerunGenericSearch = false } = options;
+
+  if (!(await detectLoginPage(page))) {
+    return {
+      ok: true,
+      message: ''
+    };
+  }
+
+  if (!allowManualPrompt) {
+    return {
+      ok: false,
+      message: `${board.name} still requires login before search results are accessible. Run scripts/search-session-bootstrap.ps1 first.`
+    };
+  }
+
+  await promptForManualStep(
+    `${board.name} still needs login in the JobPilot browser. Sign in there, then continue.`,
+    { allowPrompt: true }
+  );
+
+  await gotoAndSettle(page, searchUrl);
+  if (rerunGenericSearch && parsed && searchUrl === board.searchUrl) {
+    await genericSearchFill(page, parsed);
+  }
+
+  if (await detectLoginPage(page)) {
+    return {
+      ok: false,
+      message: `${board.name} still requires login before search results are accessible.`
+    };
+  }
+
+  return {
+    ok: true,
+    message: ''
+  };
+}
+
+export async function checkSearchBoardSession({
+  context,
+  board,
+  query = '',
+  postedWithinHours = 0,
+  allowManualPrompt = true
+}) {
+  const page = await openContextPage(context, {
+    label: `${board.name} search session check`
+  });
+
+  try {
+    const parsed = parseSearchQuery(query || board.name || 'job search');
+    const searchUrl = buildSearchUrl(board, parsed, postedWithinHours);
+    await gotoAndSettle(page, searchUrl);
+
+    if (board.domain.includes('linkedin.com')) {
+      const linkedInReadyError = await ensureLinkedInSearchReady(
+        page,
+        searchUrl,
+        allowManualPrompt
+      );
+      if (linkedInReadyError) {
+        return {
+          ok: false,
+          board: board.name,
+          searchUrl,
+          message: linkedInReadyError
+        };
+      }
+    }
+
+    const boardCredentials = getBoardSearchCredentials(board);
+    if (boardCredentials && (await detectLoginPage(page))) {
+      await attemptLogin(page, boardCredentials);
+      await page.waitForTimeout(1200);
+    }
+
+    let loginReady = await ensureBoardSearchLoginReady(
+      page,
+      board,
+      searchUrl,
+      allowManualPrompt,
+      { parsed, rerunGenericSearch: false }
+    );
+    if (!loginReady.ok) {
+      return {
+        ok: false,
+        board: board.name,
+        searchUrl,
+        message: loginReady.message
+      };
+    }
+
+    const challenge = await detectHumanChallenge(page);
+    if (challenge) {
+      if (!allowManualPrompt) {
+        return {
+          ok: false,
+          board: board.name,
+          searchUrl,
+          message: `${board.name} presented a ${challenge}.`
+        };
+      }
+
+      await promptForManualStep(
+        `${board.name} presented a ${challenge}. Solve it in the browser to continue.`,
+        { allowPrompt: true }
+      );
+      await page.waitForTimeout(1200);
+    }
+
+    if (query && searchUrl === board.searchUrl) {
+      await genericSearchFill(page, parsed);
+    }
+
+    loginReady = await ensureBoardSearchLoginReady(
+      page,
+      board,
+      searchUrl,
+      allowManualPrompt,
+      { parsed, rerunGenericSearch: true }
+    );
+    if (!loginReady.ok) {
+      return {
+        ok: false,
+        board: board.name,
+        searchUrl,
+        message: loginReady.message
+      };
+    }
+
+    const blockReason = await detectSearchBlockReason(page, board);
+    if (blockReason) {
+      return {
+        ok: false,
+        board: board.name,
+        searchUrl,
+        message: blockReason
+      };
+    }
+
+    return {
+      ok: true,
+      board: board.name,
+      searchUrl,
+      finalUrl: page.url()
+    };
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
 async function probeDirectApplyUrl(page) {
@@ -683,7 +843,7 @@ async function hydrateJob(page, candidate, board, allowManualPrompt = true) {
 }
 
 export async function fetchJobDetailsFromUrl(context, url, board = { name: 'Direct', domain: '' }) {
-  const page = await context.newPage();
+  const page = await openContextPage(context, { label: 'job details page' });
   try {
     return await hydrateJob(
       page,
@@ -715,7 +875,7 @@ export async function searchJobs({
   const aggregated = [];
 
   for (const board of boards) {
-    const page = await context.newPage();
+    const page = await openContextPage(context, { label: `${board.name} board page` });
     try {
       onProgress?.({ type: 'board-start', board: board.name, query });
       const searchUrl = buildSearchUrl(board, parsed, normalizedPostedWithinHours);
@@ -737,6 +897,17 @@ export async function searchJobs({
         await attemptLogin(page, boardCredentials);
       }
 
+      let loginReady = await ensureBoardSearchLoginReady(
+        page,
+        board,
+        searchUrl,
+        allowManualPrompt,
+        { parsed, rerunGenericSearch: false }
+      );
+      if (!loginReady.ok) {
+        throw new Error(loginReady.message);
+      }
+
       const challenge = await detectHumanChallenge(page);
       if (challenge) {
         await promptForManualStep(
@@ -747,6 +918,17 @@ export async function searchJobs({
 
       if (searchUrl === board.searchUrl) {
         await genericSearchFill(page, parsed);
+      }
+
+      loginReady = await ensureBoardSearchLoginReady(
+        page,
+        board,
+        searchUrl,
+        allowManualPrompt,
+        { parsed, rerunGenericSearch: true }
+      );
+      if (!loginReady.ok) {
+        throw new Error(loginReady.message);
       }
 
       const blockReason = await detectSearchBlockReason(page, board);
@@ -764,7 +946,9 @@ export async function searchJobs({
       let hydrated = [];
 
       for (const candidate of candidates.slice(0, hydrateLimit)) {
-        const jobPage = await context.newPage();
+        const jobPage = await openContextPage(context, {
+          label: `${board.name} job details page`
+        });
         try {
           const hydratedJob = await hydrateJob(jobPage, candidate, board, allowManualPrompt);
           const scored = scoreJob({

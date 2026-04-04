@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveCodexRunGuidanceConfig, resolveStandaloneExecutionConfig } from '../lib/config.mjs';
+import {
+  resolveCodexRunGuidanceConfig,
+  resolveStandaloneExecutionConfig,
+  resolveStandalonePreflightConfig
+} from '../lib/config.mjs';
 
 test('resolveStandaloneExecutionConfig defaults to unattended-safe edge mode', () => {
   const config = resolveStandaloneExecutionConfig({ standalone: {} }, {});
 
   assert.equal(config.executionMode, 'unattended-safe');
   assert.equal(config.browserName, 'edge');
+  assert.equal(config.browserProfileStrategy, 'auto');
   assert.equal(config.headless, true);
   assert.equal(config.allowManualPrompt, false);
   assert.equal(config.manualAutofillAssist, false);
@@ -40,13 +45,15 @@ test('resolveStandaloneExecutionConfig honors explicit browser overrides', () =>
     {
       standalone: {
         executionMode: 'supervised',
-        browserName: 'edge'
+        browserName: 'edge',
+        browserProfileStrategy: 'mirror'
       }
     },
     {
       browser: 'chrome',
       'browser-user-data-dir': 'C:\\Users\\lpnhu\\AppData\\Local\\Google\\Chrome\\User Data',
-      'browser-profile-directory': 'Default'
+      'browser-profile-directory': 'Default',
+      'browser-profile-strategy': 'direct'
     }
   );
 
@@ -56,6 +63,7 @@ test('resolveStandaloneExecutionConfig honors explicit browser overrides', () =>
     'C:\\Users\\lpnhu\\AppData\\Local\\Google\\Chrome\\User Data'
   );
   assert.equal(config.browserProfileDirectory, 'Default');
+  assert.equal(config.browserProfileStrategy, 'direct');
 });
 
 test('resolveCodexRunGuidanceConfig enables codex-guided review by default when codex is enabled', () => {
@@ -80,4 +88,30 @@ test('resolveCodexRunGuidanceConfig can be forced back to deterministic mode', (
 
   assert.equal(config.enabled, false);
   assert.equal(config.provider, 'deterministic');
+});
+
+test('resolveStandalonePreflightConfig defaults to enabled repair mode', () => {
+  const config = resolveStandalonePreflightConfig({ standalone: {} }, {});
+
+  assert.equal(config.enabled, true);
+  assert.equal(config.repairAuth, true);
+  assert.equal(config.bootstrapSetup, true);
+  assert.equal(config.searchSessions, true);
+  assert.equal(config.overleafSession, true);
+});
+
+test('resolveStandalonePreflightConfig honors skip and check-only flags', () => {
+  const checkOnly = resolveStandalonePreflightConfig({ standalone: {} }, { 'check-only': true });
+  assert.equal(checkOnly.enabled, true);
+  assert.equal(checkOnly.repairAuth, false);
+  assert.equal(checkOnly.bootstrapSetup, false);
+
+  const skipped = resolveStandalonePreflightConfig({ standalone: {} }, { 'skip-preflight': true });
+  assert.equal(skipped.enabled, false);
+
+  const forced = resolveStandalonePreflightConfig(
+    { standalone: { preflightChecks: false } },
+    { 'force-preflight': true }
+  );
+  assert.equal(forced.enabled, true);
 });

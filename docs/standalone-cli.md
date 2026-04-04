@@ -58,6 +58,8 @@ For unattended runs from a desktop shortcut:
 
 Use `.\scripts\overleaf-login-bootstrap.ps1` once if Overleaf asks for a browser verification step. It opens the same persistent browser profile that unattended runs reuse later.
 Use `.\scripts\search-session-bootstrap.ps1` if LinkedIn, Indeed, or other search boards are showing authwalls or security verification screens. It opens the enabled search boards in the persistent browser profile so you can sign in or solve the challenge once.
+Use `.\scripts\jobpilot-standalone.ps1 preflight` to run the same readiness check manually. It validates Codex CLI, required browser sessions, and Overleaf before you start a run.
+For first-time setup, run `.\scripts\search-session-bootstrap.ps1` once and sign into each enabled search board before you depend on unattended autorun.
 
 ### Search
 
@@ -107,18 +109,24 @@ File-driven batch mode:
 .\scripts\jobpilot-standalone.ps1 autorun
 ```
 
+`autorun` now runs a visible preflight pass first by default. If LinkedIn, another enabled search board, or Overleaf needs login/verification, JobPilot opens the persistent automation browser, lets you finish that step, and then continues into the normal unattended-safe apply loop.
+
 Current `standalone` config supports:
 
 - `executionMode`: `unattended-safe` or `supervised`; unattended-safe never waits for manual auth/verification and skips outside a conservative safe-host allowlist
 - `browserName`: `edge` or `chrome`
-- `browserUserDataDir`: optional browser user-data root; when you point this at a real Edge or Chrome profile, JobPilot mirrors that profile state into a repo-local automation profile before launch instead of trying to take over the live browser profile directly
+- `browserUserDataDir`: optional browser user-data root; when you point this at a real Edge or Chrome profile, JobPilot can either launch that live profile directly or mirror it into a repo-local automation profile depending on `browserProfileStrategy`
 - `browserProfileDirectory`: optional browser profile directory name such as `Default` when reusing a real browser profile
+- `browserProfileStrategy`: `auto`, `mirror`, or `direct`; `auto` uses the live system profile directly for visible runs and mirrored mode for headless ones
   After a run, JobPilot now persists login changes made inside that mirrored automation browser back into the reusable automation profile, so a LinkedIn sign-in done once in the JobPilot browser can carry forward to later runs.
 - `mode`: `query` or `file`
 - `query`: default search query
 - `queries`: optional list of default search queries for autorun; useful for adjacent roles like data analyst and product analyst
 - `filePath`: URL list for file-driven batches
 - `headless`: run the browser headlessly; set this to `false` if you want to watch Playwright drive the browser live
+- `preflightChecks`: when `true`, autorun validates Codex, search-board sessions, and Overleaf before the main run
+- `preflightRepairAuth`: when `true`, preflight can pause in a visible browser window so you can complete login or verification
+- `preflightBootstrapSetup`: when `true`, preflight can call the existing Codex/Overleaf bootstrap scripts if setup is incomplete
 - `autoApprove`: skip batch confirmation
 - `autoSubmit`: submit application forms automatically
 - `runLoopMode`: currently `one-pass`; autorun searches once, processes the current batch, and exits with a summary

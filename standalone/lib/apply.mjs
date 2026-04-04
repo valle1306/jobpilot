@@ -13,6 +13,7 @@ import {
   detectRegistrationPage,
   gotoAndSettle,
   launchBrowserContext,
+  openContextPage,
   promptForManualStep,
   tryClickByText
 } from './browser.mjs';
@@ -852,7 +853,7 @@ export async function applyToJob({
   const browserContext = context ?? (await launchBrowserContext({ headless }));
 
   try {
-    const page = await browserContext.newPage();
+    const page = await openContextPage(browserContext, { label: 'application page' });
     const targetUrl = resolveEffectiveApplyUrl(job) || url;
     const applyHost = getUrlHostname(targetUrl);
     const applicationCredentials = getCredentialForUrl(profile, targetUrl);

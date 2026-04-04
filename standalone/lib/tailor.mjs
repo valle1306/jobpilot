@@ -13,6 +13,7 @@ import { dateSlug, ensureDir, fileExists, slugify, sleep, truncate, writeText } 
 import {
   gotoAndSettle,
   launchBrowserContext,
+  openContextPage,
   promptForManualStep,
   detectHumanChallenge,
   attemptLogin,
@@ -332,7 +333,9 @@ export async function bootstrapOverleafSession({
   const browserContext = context ?? (await launchBrowserContext({ headless }));
 
   try {
-    const page = await browserContext.newPage();
+    const page = await openContextPage(browserContext, {
+      label: 'Overleaf session bootstrap page'
+    });
     const projectUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}`;
 
     await gotoAndSettle(page, projectUrl);
@@ -373,7 +376,7 @@ async function maybeDownloadOverleafPdf({
   const context = existingContext ?? (await launchBrowserContext({ headless }));
 
   try {
-    const page = await context.newPage();
+    const page = await openContextPage(context, { label: 'Overleaf download page' });
     const projectUrl = `https://www.overleaf.com/project/${profile.overleaf.projectId}`;
 
     await gotoAndSettle(page, projectUrl);

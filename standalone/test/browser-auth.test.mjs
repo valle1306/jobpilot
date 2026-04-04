@@ -6,6 +6,7 @@ import {
   detectLinkedInSignInPromptText,
   detectLoginPage,
   detectRegistrationPage,
+  openContextPage,
   resolveBrowserLaunchPlan,
   shouldMirrorSystemUserDataDir
 } from '../lib/browser.mjs';
@@ -105,12 +106,65 @@ test('resolveBrowserLaunchPlan mirrors system browser profiles into the repo-loc
   const plan = resolveBrowserLaunchPlan({
     browserName: 'edge',
     userDataDir: edgeUserDataDir,
-    profileDirectory: 'Default'
+    profileDirectory: 'Default',
+    headless: true,
+    profileStrategy: 'auto'
   });
 
   assert.equal(plan.mirroredFromSystem, true);
+  assert.equal(plan.directSystemProfile, false);
   assert.equal(plan.sourceUserDataDir, edgeUserDataDir);
   assert.equal(plan.sourceProfileDirectory, 'Default');
-  assert.match(plan.userDataDir, /\.playwright-standalone-edge$/);
+  assert.equal(plan.userDataDir, edgeUserDataDir);
+  assert.match(plan.launchUserDataDir, /\.playwright-standalone-edge$/);
   assert.equal(plan.profileDirectory, 'Default');
+});
+
+test('resolveBrowserLaunchPlan uses the live system profile directly for visible auto mode', () => {
+  const localAppData = process.env.LOCALAPPDATA;
+  if (!localAppData) {
+    return;
+  }
+
+  const edgeUserDataDir = path.join(localAppData, 'Microsoft', 'Edge', 'User Data');
+  const plan = resolveBrowserLaunchPlan({
+    browserName: 'edge',
+    userDataDir: edgeUserDataDir,
+    profileDirectory: 'Default',
+    headless: false,
+    profileStrategy: 'auto'
+  });
+
+  assert.equal(plan.mirroredFromSystem, false);
+  assert.equal(plan.directSystemProfile, true);
+  assert.equal(plan.userDataDir, edgeUserDataDir);
+  assert.equal(plan.launchUserDataDir, edgeUserDataDir);
+});
+
+test('openContextPage retries transient tab-creation errors', async () => {
+  let attempts = 0;
+  const page = {
+    isClosed: () => false,
+    url: () => 'about:blank',
+    close: async () => {}
+  };
+  const context = {
+    newPage: async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        throw new Error('Protocol error (Target.createTarget): Failed to open a new tab');
+      }
+      return page;
+    },
+    pages: () => []
+  };
+
+  const opened = await openContextPage(context, {
+    label: 'test page',
+    attempts: 3,
+    retryDelayMs: 1
+  });
+
+  assert.equal(opened, page);
+  assert.equal(attempts, 3);
 });

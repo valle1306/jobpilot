@@ -11,11 +11,13 @@ import {
   loadProfile,
   readResumeText,
   repoRoot,
+  resolveCodexConfig,
   resolveCodexRunGuidanceConfig,
   resolveRepoPath,
+  resolveStandalonePreflightConfig,
   resolveStandaloneExecutionConfig
 } from './lib/config.mjs';
-import { launchBrowserContext } from './lib/browser.mjs';
+import { launchBrowserContext, openContextPage } from './lib/browser.mjs';
 import { shouldUseCodexApplyAssist } from './lib/codex-apply.mjs';
 import { reviewAutopilotJobsWithCodexCli } from './lib/codex-review.mjs';
 import {
@@ -26,6 +28,7 @@ import {
 } from './lib/runs.mjs';
 import { scoreJob } from './lib/scoring.mjs';
 import {
+  checkSearchBoardSession,
   renderSearchLinks,
   renderSearchTable,
   searchJobs,
@@ -75,12 +78,13 @@ function printHelp() {
 
 Usage:
   node standalone/jobpilot.mjs setup [--bootstrap-overleaf] [--bootstrap-codex]
+  node standalone/jobpilot.mjs preflight [--query "entry level data scientist"] [--check-only]
   node standalone/jobpilot.mjs overleaf-login
   node standalone/jobpilot.mjs search-bootstrap
-  node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless] [--browser chrome|edge] [--search-mode direct-ats-first] [--posted-within-hours 24]
-  node standalone/jobpilot.mjs tailor <job-url> [--headless] [--browser chrome|edge] [--no-download]
-  node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless] [--browser chrome|edge] [--execution-mode supervised|unattended-safe]
-  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--browser chrome|edge] [--execution-mode supervised|unattended-safe] [--limit 10] [--search-mode direct-ats-first] [--apply-surface-policy external-only] [--posted-within-hours 24]
+  node standalone/jobpilot.mjs search "<query>" [--limit 12] [--headless] [--browser chrome|edge] [--browser-profile-strategy auto|mirror|direct] [--search-mode direct-ats-first] [--posted-within-hours 24]
+  node standalone/jobpilot.mjs tailor <job-url> [--headless] [--browser chrome|edge] [--browser-profile-strategy auto|mirror|direct] [--no-download]
+  node standalone/jobpilot.mjs apply <job-url> [--submit] [--tailor] [--resume resume.pdf] [--headless] [--browser chrome|edge] [--browser-profile-strategy auto|mirror|direct] [--execution-mode supervised|unattended-safe]
+  node standalone/jobpilot.mjs autopilot "<query>" [--yes] [--submit] [--resume resume.pdf] [--headless] [--browser chrome|edge] [--browser-profile-strategy auto|mirror|direct] [--execution-mode supervised|unattended-safe] [--limit 10] [--search-mode direct-ats-first] [--apply-surface-policy external-only] [--posted-within-hours 24]
   node standalone/jobpilot.mjs autopilot "manual batch" --file jobs-to-apply.txt [--yes] [--submit] [--resume resume.pdf]
   node standalone/jobpilot.mjs autorun
 `);
@@ -96,7 +100,9 @@ function launchConfiguredBrowserContext(profile, flags = {}, overrides = {}) {
       browserName: overrides.browserName ?? execution.browserName,
       userDataDir: overrides.browserUserDataDir ?? execution.browserUserDataDir,
       profileDirectory:
-        overrides.browserProfileDirectory ?? execution.browserProfileDirectory
+        overrides.browserProfileDirectory ?? execution.browserProfileDirectory,
+      profileStrategy:
+        overrides.browserProfileStrategy ?? execution.browserProfileStrategy
     })
   };
 }
@@ -159,7 +165,9 @@ async function commandSearchBootstrap() {
         continue;
       }
 
-      const page = await context.newPage();
+      const page = await openContextPage(context, {
+        label: `${board.name} bootstrap page`
+      });
       await page.goto(board.searchUrl, { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(1500);
       console.log(`Opened ${board.name}: ${board.searchUrl}`);
@@ -172,6 +180,232 @@ async function commandSearchBootstrap() {
   } finally {
     await context.close().catch(() => {});
   }
+}
+
+async function pathExists(targetPath) {
+  if (!targetPath) {
+    return false;
+  }
+
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function shouldCheckOverleafSession(profile = {}) {
+  return profile.overleaf?.enabled === true && profile.overleaf?.tailorResume !== false;
+}
+
+function resolveCodexPreflightRequirement(profile = {}, standaloneConfig = {}) {
+  const reasons = [];
+  const guidanceConfig = resolveCodexRunGuidanceConfig(profile);
+  const requiredTailoringProvider = resolveRequiredTailoringProvider(standaloneConfig, {});
+  const tailoringProvider = String(standaloneConfig.tailoringProvider ?? '').trim().toLowerCase();
+
+  if (guidanceConfig.enabled) {
+    reasons.push('Codex-guided job review is enabled');
+  }
+
+  if (requiredTailoringProvider === 'codex-cli') {
+    reasons.push('resume tailoring requires Codex CLI');
+  } else if (shouldCheckOverleafSession(profile) && tailoringProvider === 'codex-cli') {
+    reasons.push('resume tailoring prefers Codex CLI');
+  }
+
+  return {
+    required: reasons.length > 0,
+    reasons
+  };
+}
+
+function hasCodexAuth(config = {}) {
+  return Boolean(config.authMode || config.apiKey);
+}
+
+async function maybeBootstrapCodex(profile, standaloneConfig = {}, preflightConfig = {}) {
+  const codexRequirement = resolveCodexPreflightRequirement(profile, standaloneConfig);
+  if (!codexRequirement.required) {
+    return profile;
+  }
+
+  let currentProfile = profile;
+  let codexConfig = resolveCodexConfig(currentProfile);
+
+  if ((!codexConfig.available || !hasCodexAuth(codexConfig)) && preflightConfig.bootstrapSetup) {
+    console.log(
+      `Preflight: bootstrapping Codex CLI because ${codexRequirement.reasons.join(', ')}.`
+    );
+    await runPowerShellScript('codex-bootstrap.ps1');
+    ({ profile: currentProfile } = await loadProfile());
+    codexConfig = resolveCodexConfig(currentProfile);
+  }
+
+  if (!codexConfig.available) {
+    throw new Error(
+      `Codex CLI is required for this run (${codexRequirement.reasons.join(', ')}), but no executable was found. Run scripts/codex-bootstrap.ps1 first.`
+    );
+  }
+
+  if (!hasCodexAuth(codexConfig)) {
+    throw new Error(
+      `Codex CLI is installed but not authenticated for this run (${codexRequirement.reasons.join(', ')}). Run scripts/codex-bootstrap.ps1 first.`
+    );
+  }
+
+  console.log('Preflight: Codex CLI is ready.');
+  return currentProfile;
+}
+
+async function maybeBootstrapOverleaf(profile, preflightConfig = {}) {
+  if (!shouldCheckOverleafSession(profile)) {
+    return profile;
+  }
+
+  const clonePath = resolveRepoPath(profile.overleaf?.localClonePath);
+  const mappedTexFiles = Object.values(profile.overleaf?.texFiles ?? {})
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean);
+
+  if (mappedTexFiles.length === 0) {
+    throw new Error(
+      'Overleaf tailoring is enabled, but overleaf.texFiles is not configured in profile.json.'
+    );
+  }
+
+  const findMissingOverleafFiles = async () => {
+    const missing = [];
+
+    if (!(await pathExists(clonePath))) {
+      missing.push(clonePath || 'overleaf clone path');
+      return missing;
+    }
+
+    for (const texFile of mappedTexFiles) {
+      const texPath = clonePath ? path.join(clonePath, texFile) : '';
+      if (!(await pathExists(texPath))) {
+        missing.push(texFile);
+      }
+    }
+
+    return missing;
+  };
+
+  let currentProfile = profile;
+  let missingFiles = await findMissingOverleafFiles();
+  if (missingFiles.length > 0 && preflightConfig.bootstrapSetup) {
+    console.log('Preflight: bootstrapping the Overleaf clone and template mapping.');
+    await runPowerShellScript('overleaf-bootstrap.ps1');
+    ({ profile: currentProfile } = await loadProfile());
+    missingFiles = await findMissingOverleafFiles();
+  }
+
+  if (missingFiles.length > 0) {
+    throw new Error(
+      `Overleaf tailoring is enabled, but the local Overleaf project is not ready. Missing: ${missingFiles.join(', ')}. Run scripts/overleaf-bootstrap.ps1 first.`
+    );
+  }
+
+  console.log('Preflight: Overleaf clone is ready.');
+  return currentProfile;
+}
+
+async function runStandalonePreflight(profile, flags = {}, options = {}) {
+  const standaloneConfig = profile.standalone ?? {};
+  const preflightConfig = resolveStandalonePreflightConfig(profile, flags);
+  if (!preflightConfig.enabled) {
+    return { profile, skipped: true };
+  }
+
+  let currentProfile = profile;
+  currentProfile = await maybeBootstrapCodex(currentProfile, standaloneConfig, preflightConfig);
+  currentProfile = await maybeBootstrapOverleaf(currentProfile, preflightConfig);
+
+  const shouldCheckSearchBoards = preflightConfig.searchSessions && options.skipSearchBoards !== true;
+  const searchBoards = shouldCheckSearchBoards
+    ? getEnabledSearchBoards(currentProfile).filter((board) => board.searchUrl)
+    : [];
+  const needsOverleafSession =
+    preflightConfig.overleafSession && shouldCheckOverleafSession(currentProfile);
+
+  if (searchBoards.length === 0 && !needsOverleafSession) {
+    console.log('Preflight: no browser session checks were required.');
+    return { profile: currentProfile, skipped: false };
+  }
+
+  const queryHint =
+    normalizeQueries(options.queryHint ?? standaloneConfig.query ?? '')[0] || 'job search';
+  const postedWithinHours = resolvePostedWithinHours(standaloneConfig, flags);
+  const execution = resolveStandaloneExecutionConfig(currentProfile, flags);
+  const preflightHeadless = preflightConfig.repairAuth ? false : execution.headless;
+
+  if (!preflightHeadless) {
+    console.log(
+      'Preflight: opening the JobPilot browser profile in visible mode to verify search and resume sessions.'
+    );
+  }
+
+  const { contextPromise } = launchConfiguredBrowserContext(currentProfile, flags, {
+    headless: preflightHeadless
+  });
+  const context = await contextPromise;
+
+  try {
+    for (const board of searchBoards) {
+      console.log(`Preflight: checking ${board.name} search session...`);
+      const result = await checkSearchBoardSession({
+        context,
+        board,
+        query: queryHint,
+        postedWithinHours,
+        allowManualPrompt: preflightConfig.repairAuth
+      });
+
+      if (!result.ok) {
+        throw new Error(`Search preflight failed for ${board.name}. ${result.message}`);
+      }
+
+      console.log(`Preflight: ${board.name} search session is ready.`);
+    }
+
+    if (needsOverleafSession) {
+      console.log('Preflight: checking Overleaf session...');
+      await bootstrapOverleafSession({
+        profile: currentProfile,
+        headless: false,
+        context,
+        allowManualPrompt: preflightConfig.repairAuth
+      });
+      console.log('Preflight: Overleaf session is ready.');
+    }
+  } finally {
+    await context.close().catch(() => {});
+  }
+
+  return { profile: currentProfile, skipped: false };
+}
+
+async function commandPreflight(flags) {
+  const { profile } = await loadProfile();
+  await ensureWorkingDirs();
+  const standaloneConfig = profile.standalone ?? {};
+  const effectiveFlags = {
+    ...flags,
+    'force-preflight': true
+  };
+  const queryHint =
+    String(flags.query ?? '').trim() ||
+    normalizeQueries(standaloneConfig.query ?? '')[0] ||
+    resolveAutorunQueries(standaloneConfig)[0] ||
+    'job search';
+
+  await runStandalonePreflight(profile, effectiveFlags, {
+    queryHint,
+    skipSearchBoards: standaloneConfig.mode === 'file' || Boolean(flags.file)
+  });
+  console.log('\nPreflight complete. Codex, browser sessions, and Overleaf are ready for the next run.');
 }
 
 async function commandSearch(query, flags) {
@@ -1497,13 +1731,20 @@ async function runAutopilot(profile, query, flags, standaloneConfig = {}) {
 }
 
 async function commandAutopilot(query, flags) {
-  const { profile } = await loadProfile();
+  let { profile } = await loadProfile();
+  const preflightResult = await runStandalonePreflight(profile, flags, {
+    queryHint: query,
+    skipSearchBoards: Boolean(flags.file)
+  });
+  if (preflightResult.profile) {
+    profile = preflightResult.profile;
+  }
   await runAutopilot(profile, query, flags, profile.standalone ?? {});
 }
 
 async function commandAutorun(flagOverrides = {}) {
-  const { profile } = await loadProfile();
-  const standaloneConfig = profile.standalone ?? {};
+  let { profile } = await loadProfile();
+  let standaloneConfig = profile.standalone ?? {};
 
   if (standaloneConfig.enabled === false) {
     throw new Error('profile.json standalone.enabled is false.');
@@ -1521,6 +1762,7 @@ async function commandAutorun(flagOverrides = {}) {
     browser: standaloneConfig.browserName ?? '',
     'browser-user-data-dir': standaloneConfig.browserUserDataDir ?? '',
     'browser-profile-directory': standaloneConfig.browserProfileDirectory ?? '',
+    'browser-profile-strategy': standaloneConfig.browserProfileStrategy ?? '',
     limit:
       standaloneConfig.maxApplicationsPerRun ??
       profile.autopilot?.maxApplicationsPerRun ??
@@ -1545,6 +1787,16 @@ async function commandAutorun(flagOverrides = {}) {
     flags[key] = value;
   }
 
+  const preflightQuery = normalizeQueries(query)[0] || 'job search';
+  const preflightResult = await runStandalonePreflight(profile, flags, {
+    queryHint: preflightQuery,
+    skipSearchBoards: standaloneConfig.mode === 'file'
+  });
+  if (preflightResult.profile) {
+    profile = preflightResult.profile;
+    standaloneConfig = profile.standalone ?? {};
+  }
+
   await runAutopilot(profile, query, flags, standaloneConfig);
 }
 
@@ -1560,6 +1812,9 @@ async function main() {
       break;
     case 'setup':
       await commandSetup(flags);
+      break;
+    case 'preflight':
+      await commandPreflight(flags);
       break;
     case 'search':
       if (positional.length === 0) {

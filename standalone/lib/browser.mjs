@@ -32,6 +32,21 @@ export function getChromeExecutablePath() {
   return pickExecutable(chromeCandidates, chromeCandidates[0]);
 }
 
+function isDirectProfileLaunchBlocked(error) {
+  const message = String(error?.message || '');
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes('spawn eperm') ||
+    normalized.includes('profile appears to be in use') ||
+    normalized.includes('user data directory is already in use') ||
+    normalized.includes('process singleton') ||
+    normalized.includes('target page, context or browser has been closed') ||
+    normalized.includes('process did exit: exitcode=21') ||
+    normalized.includes('exitcode=21')
+  );
+}
+
 function normalizeFsPath(value = '') {
   return path.resolve(String(value || '')).replace(/[\\/]+/g, '\\').toLowerCase();
 }
@@ -60,10 +75,21 @@ export function shouldMirrorSystemUserDataDir(userDataDir = '', browserName = 'e
   return normalizeFsPath(userDataDir) === normalizeFsPath(systemDir);
 }
 
+function normalizeProfileStrategy(value = '') {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'direct' || normalized === 'mirror') {
+    return normalized;
+  }
+
+  return 'auto';
+}
+
 export function resolveBrowserLaunchPlan({
   browserName = 'edge',
   userDataDir = '',
-  profileDirectory = ''
+  profileDirectory = '',
+  headless = false,
+  profileStrategy = 'auto'
 } = {}) {
   const normalizedBrowser = String(browserName ?? 'edge').trim().toLowerCase() === 'chrome'
     ? 'chrome'
@@ -80,18 +106,27 @@ export function resolveBrowserLaunchPlan({
       : path.resolve(repoRoot, userDataDir)
     : defaultAutomationDir;
   const resolvedProfileDirectory = profileDirectory || 'Default';
-  const mirroredFromSystem = shouldMirrorSystemUserDataDir(
+  const systemProfileRequested = shouldMirrorSystemUserDataDir(
     resolvedUserDataDir,
     normalizedBrowser
   );
+  const normalizedProfileStrategy = normalizeProfileStrategy(profileStrategy);
+  const directSystemProfile =
+    systemProfileRequested &&
+    (normalizedProfileStrategy === 'direct' ||
+      (normalizedProfileStrategy === 'auto' && !headless));
+  const mirroredFromSystem = systemProfileRequested && !directSystemProfile;
 
   return {
     browserName: normalizedBrowser,
-    userDataDir: mirroredFromSystem ? defaultAutomationDir : resolvedUserDataDir,
+    userDataDir: resolvedUserDataDir,
+    launchUserDataDir: mirroredFromSystem ? defaultAutomationDir : resolvedUserDataDir,
     profileDirectory: resolvedProfileDirectory,
     sourceUserDataDir: mirroredFromSystem ? resolvedUserDataDir : '',
     sourceProfileDirectory: mirroredFromSystem ? resolvedProfileDirectory : '',
-    mirroredFromSystem
+    mirroredFromSystem,
+    directSystemProfile,
+    profileStrategy: normalizedProfileStrategy
   };
 }
 
@@ -329,26 +364,29 @@ export async function launchBrowserContext({
   headless = false,
   browserName = 'edge',
   userDataDir = '',
-  profileDirectory = ''
+  profileDirectory = '',
+  profileStrategy = 'auto'
 } = {}) {
   const plan = resolveBrowserLaunchPlan({
     browserName,
     userDataDir,
-    profileDirectory
+    profileDirectory,
+    headless,
+    profileStrategy
   });
   const normalizedBrowser = plan.browserName;
   const executablePath =
     normalizedBrowser === 'chrome' ? getChromeExecutablePath() : getEdgeExecutablePath();
-  let launchUserDataDir = plan.userDataDir;
+  let launchUserDataDir = plan.launchUserDataDir;
 
   if (plan.mirroredFromSystem) {
     const syncResult = syncSystemBrowserProfile({
       ...plan,
-      userDataDir: plan.userDataDir
+      userDataDir: plan.launchUserDataDir
     });
     launchUserDataDir = prepareMirrorLaunchDir(normalizedBrowser);
     cloneSeedProfileToLaunchDir({
-      seedUserDataDir: plan.userDataDir,
+      seedUserDataDir: plan.launchUserDataDir,
       profileDirectory: plan.profileDirectory,
       launchUserDataDir
     });
@@ -392,7 +430,7 @@ export async function launchBrowserContext({
           try {
             persistLaunchProfileToSeedDir({
               launchUserDataDir,
-              seedUserDataDir: plan.userDataDir,
+              seedUserDataDir: plan.launchUserDataDir,
               profileDirectory: plan.profileDirectory
             });
           } catch (error) {
@@ -423,14 +461,91 @@ export async function launchBrowserContext({
 
     return context;
   } catch (error) {
+    const directLaunchBlocked =
+      plan.directSystemProfile && isDirectProfileLaunchBlocked(error);
+
+    if (directLaunchBlocked && plan.profileStrategy === 'auto') {
+      console.log(
+        `Direct ${normalizedBrowser} profile launch was blocked, so JobPilot is falling back to the mirrored automation profile.`
+      );
+      return launchBrowserContext({
+        headless,
+        browserName,
+        userDataDir,
+        profileDirectory,
+        profileStrategy: 'mirror'
+      });
+    }
+
     if (String(error?.message || '').includes('spawn EPERM') && plan.mirroredFromSystem) {
       throw new Error(
         `JobPilot could not launch ${normalizedBrowser} even after mirroring your signed-in browser profile into ${launchUserDataDir}. Close all ${normalizedBrowser} windows and try again.`
       );
     }
 
+    if (directLaunchBlocked && plan.profileStrategy === 'direct') {
+      throw new Error(
+        `JobPilot could not launch the live ${normalizedBrowser} profile directly. Close all ${normalizedBrowser} windows or switch standalone.browserProfileStrategy back to "mirror".`
+      );
+    }
+
     throw error;
   }
+}
+
+function isTransientNewPageError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    message.includes('target.createtarget') ||
+    message.includes('failed to open a new tab') ||
+    message.includes('failed to create target')
+  );
+}
+
+async function closeBlankPages(context) {
+  if (!context || typeof context.pages !== 'function') {
+    return;
+  }
+
+  for (const page of context.pages()) {
+    try {
+      if (!page || page.isClosed?.()) {
+        continue;
+      }
+
+      if (page.url() === 'about:blank') {
+        await page.close({ runBeforeUnload: false }).catch(() => {});
+      }
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }
+}
+
+export async function openContextPage(
+  context,
+  { label = 'browser page', attempts = 3, retryDelayMs = 1200 } = {}
+) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await context.newPage();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientNewPageError(error) || attempt === attempts) {
+        throw error;
+      }
+
+      console.warn(
+        `Warning: JobPilot could not open ${label} on attempt ${attempt}/${attempts}. Retrying...`
+      );
+      await closeBlankPages(context);
+      await sleep(retryDelayMs * attempt);
+    }
+  }
+
+  throw lastError ?? new Error(`JobPilot could not open ${label}.`);
 }
 
 export async function gotoAndSettle(page, url) {

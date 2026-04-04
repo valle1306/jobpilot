@@ -75,6 +75,12 @@ To run the standalone unattended workflow:
 .\scripts\jobpilot-autorun.ps1
 ```
 
+To verify Codex, LinkedIn, and Overleaf readiness before a run:
+
+```powershell
+.\scripts\jobpilot-standalone.ps1 preflight
+```
+
 To bootstrap Codex CLI for standalone JD-aware LaTeX editing:
 
 ```powershell
@@ -92,6 +98,9 @@ If the search boards show authwalls, Cloudflare, or other anti-bot pages, seed t
 ```powershell
 .\scripts\search-session-bootstrap.ps1
 ```
+
+`autorun` now runs that same readiness check automatically by default. If LinkedIn or Overleaf needs attention, JobPilot briefly opens the visible automation browser, lets you sign in, then continues into the normal Codex-guided autorun flow.
+For a first-time setup, it is still a good idea to run `.\scripts\search-session-bootstrap.ps1` once and sign into each enabled job board before relying on the desktop shortcut.
 
 To enable JD-aware AI resume tailoring in the standalone flow, keep the `codex` block enabled in `profile.json` and run `.\scripts\codex-bootstrap.ps1`. JobPilot can use your existing Codex CLI ChatGPT login or fall back to `CODEX_API_KEY` or `OPENAI_API_KEY` from `.env`.
 If you want the shortcut to behave more like the original Claude-powered flow, set `standalone.requireTailoringProvider` to `codex-cli` so JobPilot refuses to apply unless Codex CLI tailoring succeeds and produces a tailored PDF.
@@ -112,7 +121,8 @@ Hard ATS hosts such as Workday, UKG/UltiPro, ADP, iCIMS, Taleo, Oracle Recruitin
 That Codex-assisted apply mode does not bypass real login walls, CAPTCHA, email verification, or MFA. It helps Playwright choose better guest/manual paths and field actions when the ATS UI is unusually dynamic.
 If an ATS requires account creation before applying, JobPilot now treats that as part of the application flow and fills the password fields from `credentials.default.password` unless you configured a board-specific credential override.
 If you prefer to watch and occasionally trigger your own browser autofill extension, set `standalone.manualAutofillAssist` to `true`. On difficult ATS pages, JobPilot will pause in the visible browser, let you use the extension manually, and then resume.
-If you want supervised runs to reuse a real Chrome profile with installed extensions, set `standalone.browserName` to `chrome` and point `standalone.browserUserDataDir` plus `standalone.browserProfileDirectory` at your Chrome profile. JobPilot will mirror that profile state into its own automation profile before launch, which is more reliable than trying to automate the live browser profile directly.
+If you want supervised runs to reuse a real Chrome profile with installed extensions, set `standalone.browserName` to `chrome` and point `standalone.browserUserDataDir` plus `standalone.browserProfileDirectory` at your Chrome profile. JobPilot can launch that live profile directly for visible runs or mirror it into its own automation profile when needed.
+If you want the earlier direct-profile behavior that reuses your live signed-in browser for visible runs, keep `standalone.browserProfileStrategy` at `auto` or set it to `direct`.
 When JobPilot launches from a mirrored real browser profile, any login you complete inside the JobPilot browser is now persisted back into JobPilot's reusable automation profile. That means signing into LinkedIn once in the JobPilot browser should carry over to future runs even if your normal Edge session stays open later.
 Each autorun now writes both a machine-readable run JSON and a human-readable `*.summary.txt` file in `runs`, including applied, failed, skipped, stage-specific totals, and skip buckets such as duplicate, no-direct-apply, and too-old postings.
 Standalone completion summaries now also group outcomes by board/apply host and break down why jobs failed or were skipped, closer to the original Claude `/autopilot` reporting style.

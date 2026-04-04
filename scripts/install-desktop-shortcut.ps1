@@ -22,7 +22,7 @@ $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $targetPath
 $shortcut.WorkingDirectory = $workingDirectory
-$shortcut.Description = "Run the standalone JobPilot autorun workflow"
+$shortcut.Description = "Run the Codex-powered standalone JobPilot autorun workflow"
 $shortcut.IconLocation = "$iconPath,220"
 $shortcut.Save()
 
