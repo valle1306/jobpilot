@@ -2,7 +2,9 @@ import { getEnabledSearchBoards, parseSearchQuery } from './config.mjs';
 import {
   attemptLogin,
   detectHumanChallenge,
+  detectLinkedInAuthwallSignals,
   detectLoginPage,
+  dismissLinkedInSignInPrompt,
   gotoAndSettle,
   promptForManualStep
 } from './browser.mjs';
@@ -353,7 +355,13 @@ async function detectSearchBlockReason(page, board) {
     .slice(0, 4000);
 
   if (board.domain.includes('linkedin.com')) {
-    if (url.includes('linkedin.com/authwall') || title.includes('sign up | linkedin')) {
+    if (
+      detectLinkedInAuthwallSignals({
+        url,
+        title,
+        bodyText
+      })
+    ) {
       return 'LinkedIn authwall blocked unauthenticated job search.';
     }
   }
@@ -376,6 +384,32 @@ async function detectSearchBlockReason(page, board) {
   }
 
   return '';
+}
+
+async function ensureLinkedInSearchReady(page, searchUrl, allowManualPrompt = true) {
+  await dismissLinkedInSignInPrompt(page).catch(() => false);
+  let blockReason = await detectSearchBlockReason(page, {
+    name: 'LinkedIn',
+    domain: 'linkedin.com'
+  });
+
+  if (
+    blockReason === 'LinkedIn authwall blocked unauthenticated job search.' &&
+    allowManualPrompt
+  ) {
+    await promptForManualStep(
+      'LinkedIn is not signed in inside the JobPilot browser yet. Sign in to LinkedIn in this browser window, then continue.',
+      { allowPrompt: true }
+    );
+    await gotoAndSettle(page, searchUrl);
+    await dismissLinkedInSignInPrompt(page).catch(() => false);
+    blockReason = await detectSearchBlockReason(page, {
+      name: 'LinkedIn',
+      domain: 'linkedin.com'
+    });
+  }
+
+  return blockReason;
 }
 
 async function probeDirectApplyUrl(page) {
@@ -417,8 +451,27 @@ async function probeDirectApplyUrl(page) {
   return '';
 }
 
-async function hydrateJob(page, candidate, board) {
+async function hydrateJob(page, candidate, board, allowManualPrompt = true) {
   await gotoAndSettle(page, candidate.url);
+  if (board.domain.includes('linkedin.com') || String(candidate.url).includes('linkedin.com')) {
+    await dismissLinkedInSignInPrompt(page).catch(() => false);
+    const title = await page.title().catch(() => '');
+    const bodyText = (await page.locator('body').innerText().catch(() => ''))
+      .slice(0, 5000);
+    const linkedInBlocked = detectLinkedInAuthwallSignals({
+      url: page.url(),
+      title,
+      bodyText
+    });
+    if (linkedInBlocked && allowManualPrompt) {
+      await promptForManualStep(
+        'LinkedIn opened an authwall instead of the job details. Sign in to LinkedIn in this JobPilot browser, then continue.',
+        { allowPrompt: true }
+      );
+      await gotoAndSettle(page, candidate.url);
+      await dismissLinkedInSignInPrompt(page).catch(() => false);
+    }
+  }
 
   const details = await page.evaluate(() => {
     const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
@@ -668,6 +721,17 @@ export async function searchJobs({
       const searchUrl = buildSearchUrl(board, parsed, normalizedPostedWithinHours);
       await gotoAndSettle(page, searchUrl);
 
+      if (board.domain.includes('linkedin.com')) {
+        const linkedInReadyError = await ensureLinkedInSearchReady(
+          page,
+          searchUrl,
+          allowManualPrompt
+        );
+        if (linkedInReadyError) {
+          throw new Error(linkedInReadyError);
+        }
+      }
+
       const boardCredentials = getBoardSearchCredentials(board);
       if (boardCredentials && (await detectLoginPage(page))) {
         await attemptLogin(page, boardCredentials);
@@ -702,7 +766,7 @@ export async function searchJobs({
       for (const candidate of candidates.slice(0, hydrateLimit)) {
         const jobPage = await context.newPage();
         try {
-          const hydratedJob = await hydrateJob(jobPage, candidate, board);
+          const hydratedJob = await hydrateJob(jobPage, candidate, board, allowManualPrompt);
           const scored = scoreJob({
             resumeText,
             title: hydratedJob.title,

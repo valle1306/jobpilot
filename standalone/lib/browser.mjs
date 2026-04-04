@@ -471,6 +471,74 @@ export async function detectLoginPage(page) {
   );
 }
 
+export function detectLinkedInAuthwallSignals({ url = '', title = '', bodyText = '' } = {}) {
+  const normalizedUrl = String(url ?? '').toLowerCase();
+  const normalizedTitle = String(title ?? '').toLowerCase();
+  const normalizedBodyText = String(bodyText ?? '').toLowerCase();
+
+  return (
+    normalizedUrl.includes('linkedin.com/authwall') ||
+    normalizedTitle.includes('sign up | linkedin') ||
+    normalizedBodyText.includes('join linkedin to see more jobs') ||
+    normalizedBodyText.includes('sign in to see more jobs') ||
+    normalizedBodyText.includes('sign in to see who you already know') ||
+    normalizedBodyText.includes('continue with email') && normalizedBodyText.includes('new to linkedin? join now')
+  );
+}
+
+export function detectLinkedInSignInPromptText(bodyText = '') {
+  const normalizedBodyText = String(bodyText ?? '').toLowerCase();
+  return (
+    normalizedBodyText.includes('new to linkedin? join now') ||
+    normalizedBodyText.includes('sign in with email') ||
+    normalizedBodyText.includes('sign in to see who you already know')
+  );
+}
+
+export async function dismissLinkedInSignInPrompt(page) {
+  const bodyText = (await page.locator('body').innerText().catch(() => ''))
+    .toLowerCase()
+    .slice(0, 6000);
+
+  if (!detectLinkedInSignInPromptText(bodyText)) {
+    return false;
+  }
+
+  const selectors = [
+    'button[aria-label*="Dismiss" i]',
+    'button[aria-label*="Close" i]',
+    'button[aria-label*="close modal" i]',
+    '.artdeco-modal__dismiss',
+    '.contextual-sign-in-modal__modal-dismiss-icon',
+    '.contextual-sign-in-modal button[aria-label]'
+  ];
+
+  for (const selector of selectors) {
+    try {
+      const candidate = page.locator(selector).first();
+      if (await candidate.isVisible({ timeout: 500 }).catch(() => false)) {
+        await candidate.click({ timeout: 1500 }).catch(() => {});
+        await page.waitForTimeout(1000);
+        return true;
+      }
+    } catch {
+      // Try next selector.
+    }
+  }
+
+  try {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+  } catch {
+    // Ignore.
+  }
+
+  const afterText = (await page.locator('body').innerText().catch(() => ''))
+    .toLowerCase()
+    .slice(0, 6000);
+  return !detectLinkedInSignInPromptText(afterText);
+}
+
 export async function attemptLogin(page, credentials) {
   if (!credentials) {
     return false;

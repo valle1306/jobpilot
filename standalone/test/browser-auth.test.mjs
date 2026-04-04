@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import {
+  detectLinkedInAuthwallSignals,
+  detectLinkedInSignInPromptText,
   detectLoginPage,
   detectRegistrationPage,
   resolveBrowserLaunchPlan,
@@ -60,6 +62,26 @@ test('detectLoginPage still identifies ordinary sign-in pages', async () => {
 
   assert.equal(await detectRegistrationPage(page), false);
   assert.equal(await detectLoginPage(page), true);
+});
+
+test('detectLinkedInAuthwallSignals recognizes LinkedIn authwall pages', () => {
+  assert.equal(
+    detectLinkedInAuthwallSignals({
+      url: 'https://www.linkedin.com/authwall?trk=public_jobs',
+      title: 'Sign Up | LinkedIn',
+      bodyText: 'Sign in to see more jobs'
+    }),
+    true
+  );
+});
+
+test('detectLinkedInSignInPromptText recognizes dismissible LinkedIn job overlays', () => {
+  assert.equal(
+    detectLinkedInSignInPromptText(
+      'Sign in to see who you already know at Baselayer Sign in with Email New to LinkedIn? Join now'
+    ),
+    true
+  );
 });
 
 test('shouldMirrorSystemUserDataDir detects the real Edge user-data root', () => {
